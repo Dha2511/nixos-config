@@ -63,13 +63,25 @@
   # Allow unfree packages
   nixpkgs.config.allowUnfree = true;
 
-  # List packages installed in system profile. To search, run:
-  # $ nix search wget
+  # Enable Sway
+  programs.sway.enable = true;
+
+  # Battery Efficiency
+  services.tlp.enable = true; # Best for laptops
+  powerManagement.powertop.enable = true;
+
+  # Essential System Tools
   environment.systemPackages = with pkgs; [
-  #  vim # Do not forget to add an editor to edit configuration.nix! The Nano editor is also installed by default.
-  #  wget
+    git
+    gh
+    nh # The "Nix Helper" - use 'nh os switch' instead of nixos-rebuild
   ];
 
+  # The Python Secret Sauce: nix-ld
+  # This allows pre-compiled binaries (like those uv/pip download) to run
+  programs.nix-ld.enable = true;
+
+  # Nix Settings
   nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
   # Some programs need SUID wrappers, can be configured further or are
