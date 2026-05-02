@@ -45,12 +45,12 @@
 
   # Configure keymap in X11
   services.xserver.xkb = {
-    layout = "dk";
+    layout = "us";
     variant = "";
   };
 
   # Configure console keymap
-  console.keyMap = "dk-latin1";
+  console.keyMap = "us";
 
   # Define a user account. Don't forget to set a password with ‘passwd’.
   users.users.bob = {
