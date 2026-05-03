@@ -74,7 +74,31 @@
   environment.systemPackages = with pkgs; [
     git
     gh
-    nh # The "Nix Helper" - use 'nh os switch' instead of nixos-rebuild
+    nh
+    aria2
+    curl
+    wget
+    gitbutler
+    podman
+    tar
+    unzip
+  ];
+
+  fonts.fonts = with pkgs; [
+    nerd-fonts.commit-mono
+    nerd-fonts.departure-mono
+    lexend
+    noto-fonts
+    noto-fonts-cjk-sans
+    noto-fonts-color-emoji
+    atkinson-hyperlegible-mono
+    atkinson-hyperlegible-next
+    hubot-sans
+    mona-sans
+    alegreya
+    alegreya-sans
+    fraunces
+    recursive
   ];
 
   # The Python Secret Sauce: nix-ld

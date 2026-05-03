@@ -10,6 +10,10 @@
     # Zen Browser and Ghostty often have their own flakes for latest updates
     zen-browser.url = "github:youwen5/zen-browser-flake";
     zen-browser.inputs.nixpkgs.follows = "nixpkgs";
+
+    # Forgecode (so `nix run github:tailcallhq/forgecode` can be referenced as an input)
+    forgecode.url = "github:tailcallhq/forgecode";
+    forgecode.inputs.nixpkgs.follows = "nixpkgs";
   };
 
   outputs = { self, nixpkgs, home-manager, ... }@inputs: {
