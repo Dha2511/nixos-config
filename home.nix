@@ -7,6 +7,7 @@
     inputs.zen-browser.packages.${pkgs.system}.default
     inputs.forgecode.packages.${pkgs.system}.default
     pkgs.zed-editor
+    pkgs.helix
     pkgs.blender
     pkgs.typst
     pkgs.bazecor
@@ -23,7 +24,7 @@
 
     # CLI / Dev
     pkgs.micro
-    pkgs.ghostty
+    pkgs.foot
     pkgs.cargo
     pkgs.uv
     pkgs.python3
@@ -31,12 +32,13 @@
     pkgs.gh
     pkgs.gitbutler
     pkgs.podman
+    pkgs.opencode
 
     # Online search
     pkgs.surfraw
     pkgs.ddgr
     pkgs.w3m
-    pkgs.searxng # We likely need to set up a service for this
+    pkgs.vivaldi
 
     # Utilities
     pkgs.aria2

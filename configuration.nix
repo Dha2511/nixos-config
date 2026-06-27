@@ -67,8 +67,21 @@
   programs.sway.enable = true;
 
   # Battery Efficiency
-  services.tlp.enable = true; # Best for laptops
-  powerManagement.powertop.enable = true;
+  services.power-profiles-daemon.enable = true; # Power profiles (balanced/power-saver/performance)
+  services.upower.enable = true; # Battery status reporting via D-Bus
+
+  # Audio
+  security.rtkit.enable = true; # Realtime scheduling for PipeWire (low-latency audio)
+  services.pipewire = {
+    enable = true;
+    alsa.enable = true;
+    alsa.support32Bit = true; # 32-bit ALSA app compatibility (e.g. some games/Wine)
+    pulse.enable = true; # Emulates PulseAudio so modern apps work seamlessly
+  };
+
+  # Bluetooth
+  hardware.bluetooth.enable = true; # BlueZ stack (daemon + kernel modules)
+  hardware.bluetooth.powerOnBoot = true; # Power on adapter automatically at boot
 
   # Essential System Tools
   environment.systemPackages = with pkgs; [
