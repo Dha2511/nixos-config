@@ -4,8 +4,6 @@
 
   home.packages = [
     # GUI
-    inputs.zen-browser.packages.${pkgs.system}.default
-    inputs.forgecode.packages.${pkgs.system}.default
     pkgs.zed-editor
     pkgs.helix
     pkgs.blender
