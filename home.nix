@@ -6,6 +6,7 @@
     # GUI
     pkgs.zed-editor
     pkgs.helix
+    pkgs.vim
     pkgs.blender
     pkgs.typst
     pkgs.bazecor
@@ -43,7 +44,7 @@
     pkgs.curl
     pkgs.wget
     pkgs.timg
-    pkgs.tar
+    pkgs.gnutar
     pkgs.unzip
     pkgs.tmux
     pkgs.ripgrep
@@ -59,5 +60,5 @@
     syntaxHighlighting.enable = true;
   };
 
-  home.stateVersion = "25.11";
+  home.stateVersion = "26.05";
 }
