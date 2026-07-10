@@ -407,6 +407,20 @@ in
     alsa.enable = true;
     alsa.support32Bit = true; # 32-bit ALSA app compatibility (e.g. some games/Wine)
     pulse.enable = true; # Emulates PulseAudio so modern apps work seamlessly
+    # Bluetooth A2DP codec priority: WirePlumber picks the first codec in the
+    # list that the device supports, so high-fidelity codecs (LDAC, aptX HD,
+    # aptX, AAC) are tried before falling back to SBC-XQ / SBC. SBC-XQ uses
+    # high-bitpool "Dual Channel" mode for near-CD quality on devices that
+    # lack aptX/AAC/LDAC — works with virtually every BT headphone.
+    wireplumber.configPackages = [
+      (pkgs.writeTextDir "share/wireplumber/wireplumber.conf.d/51-bluetooth-codecs.conf" ''
+        monitor.bluez.properties = {
+          bluez5.roles = [ "a2dp-sink" "hsp-hs" "hfp-hf" ]
+          bluez5.codecs = [ "ldac" "aptx_hd" "aptx" "aac" "sbc_xq" "sbc" ]
+          bluez5.enable-sbc-xq = true
+        }
+      '')
+    ];
   };
 
   # Bluetooth
