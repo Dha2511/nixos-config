@@ -34,18 +34,31 @@ let
     esac
   '';
 
+  # Union of host X11 shared libs that ComfyUI's bundled ANGLE (libGLESv2, used
+  # by comfy_extras/nodes_glsl.py) dlopen-depends on but that NixOS keeps off
+  # the default loader path. Collected into one /lib to keep the wrapper tidy.
+  comfyui-host-libs = pkgs.buildEnv {
+    name = "comfyui-host-libs";
+    paths = [ pkgs.libx11 pkgs.libxext pkgs.libxcb pkgs.libxau pkgs.libxdmcp ];
+  };
+
   # ComfyUI launcher for the hybrid Intel + RTX 3050 (RTD3) setup.
   # Scopes NVIDIA PRIME offload to *this process only*: CUDA targets the dGPU
   # while the rest of the session stays on Mesa (the global Intel-only
   # Vulkan/EGL restriction in configuration.nix is left untouched). Launching
   # wakes the dGPU (RTD3 exits); quitting drops the runtime-PM ref so the GPU
   # re-suspends. The pip-installed PyTorch CUDA wheel bundles its own CUDA
-  # runtime but still needs two host libs that NixOS keeps off the default
-  # loader path: the driver's libcuda.so.1 (in /run/opengl-driver/lib) and the
-  # GNU C++ runtime libstdc++.so.6 + libgcc_s.so.1 (in the gcc lib output). We
-  # surface all of them to both the nix-ld and the regular linker search paths.
-  # TRITON_LIBCUDA_PATH makes the Triton kernel JIT skip its hardcoded
-  # /sbin/ldconfig lookup (absent on NixOS) and go straight to libcuda.
+  # runtime but still needs several host libs that NixOS keeps off the default
+  # loader path, so we surface them all to both the nix-ld and regular linker
+  # search paths:
+  #   - libcuda.so.1 (driver, in /run/opengl-driver/lib)
+  #   - libstdc++.so.6 + libgcc_s.so.1 (gcc lib output)
+  #   - X11 libs libX11/libXext/libxcb/... (comfyui-host-libs) for the GLSL/ANGLE nodes
+  # TRITON_LIBCUDA_PATH makes the Triton JIT skip its hardcoded /sbin/ldconfig
+  # lookup (absent on NixOS) and go straight to libcuda. CC points the Triton
+  # JIT at a working C compiler (it compiles a small driver shim at runtime):
+  # NixOS has no `cc`/`gcc` on PATH, so we use the gcc-wrapper from stdenv,
+  # which carries its own glibc headers + binutils (also put on PATH for `as`/`ld`).
   comfyui = pkgs.writeShellScriptBin "comfyui" ''
     cd ~/comfy/ComfyUI 2>/dev/null || {
       echo "ComfyUI workspace not found at ~/comfy/ComfyUI." >&2
@@ -56,9 +69,11 @@ let
     export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
     export __GLX_VENDOR_LIBRARY_NAME=nvidia
     export __VK_LAYER_NV_optimus=NVIDIA_only
-    export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    export NIX_LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
+    export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib:${comfyui-host-libs}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export NIX_LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib:${comfyui-host-libs}/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
     export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
+    export CC="${pkgs.stdenv.cc}/bin/cc"
+    export PATH="${pkgs.stdenv.cc}/bin:$PATH"
     exec comfy launch "$@"
   '';
 
