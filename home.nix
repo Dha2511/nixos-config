@@ -40,12 +40,15 @@ let
   # Vulkan/EGL restriction in configuration.nix is left untouched). Launching
   # wakes the dGPU (RTD3 exits); quitting drops the runtime-PM ref so the GPU
   # re-suspends. The pip-installed PyTorch CUDA wheel bundles its own CUDA
-  # runtime but still needs the driver's libcuda.so.1 — the NVIDIA driver
-  # installs it into /run/opengl-driver/lib, which we surface to both the
-  # nix-ld and the regular linker search paths.
+  # runtime but still needs two host libs that NixOS keeps off the default
+  # loader path: the driver's libcuda.so.1 (in /run/opengl-driver/lib) and the
+  # GNU C++ runtime libstdc++.so.6 + libgcc_s.so.1 (in the gcc lib output). We
+  # surface all of them to both the nix-ld and the regular linker search paths.
+  # TRITON_LIBCUDA_PATH makes the Triton kernel JIT skip its hardcoded
+  # /sbin/ldconfig lookup (absent on NixOS) and go straight to libcuda.
   comfyui = pkgs.writeShellScriptBin "comfyui" ''
-    cd ~/ComfyUI 2>/dev/null || {
-      echo "ComfyUI workspace not found at ~/ComfyUI." >&2
+    cd ~/comfy/ComfyUI 2>/dev/null || {
+      echo "ComfyUI workspace not found at ~/comfy/ComfyUI." >&2
       echo "Run comfyui-bootstrap first." >&2
       exit 1
     }
@@ -53,23 +56,25 @@ let
     export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
     export __GLX_VENDOR_LIBRARY_NAME=nvidia
     export __VK_LAYER_NV_optimus=NVIDIA_only
-    export LD_LIBRARY_PATH="/run/opengl-driver/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    export NIX_LD_LIBRARY_PATH="/run/opengl-driver/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
+    export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export NIX_LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
+    export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
     exec comfy launch "$@"
   '';
 
-  # One-time provisioning of the comfy-cli-managed ComfyUI install (~/ComfyUI).
+  # One-time provisioning of the comfy-cli-managed ComfyUI install (~/comfy/ComfyUI —
+  # comfy-cli's default workspace path; it picks this itself, so we cd there).
   # Installs comfy-cli as a uv tool, then clones ComfyUI and builds a
   # CUDA-capable Python venv (pick NVIDIA when prompted). Re-runnable. The
   # install + models live outside the Nix store by design — ComfyUI releases
   # weekly and models are tens of GB; only the launcher and .desktop are tracked.
   comfyui-bootstrap = pkgs.writeShellScriptBin "comfyui-bootstrap" ''
     set -e
-    mkdir -p ~/ComfyUI
+    mkdir -p ~/comfy/ComfyUI
     uv tool install comfy-cli
-    cd ~/ComfyUI
+    cd ~/comfy/ComfyUI
     comfy install
-    echo "Done. Launch with: comfyui  (web UI at http://localhost:8188)"
+    echo "Done. Launch with: comfyui  (models go in ~/comfy/ComfyUI/models; web UI at http://localhost:8188)"
   '';
 in {
   home.username = "bob";
