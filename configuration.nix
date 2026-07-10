@@ -20,9 +20,17 @@ in
   boot.loader.systemd-boot.configurationLimit = 3;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # Early KMS: load drivers in initrd so modesetting happens at boot.
+  # Early KMS: load i915 in initrd so modesetting happens at boot.
   # i915 drives the internal panel (eDP-1) for a clean high-res fbcon.
-  boot.initrd.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" "i915" ];
+  # NOTE: NVIDIA is intentionally NOT in the initrd. The panel is on Intel,
+  # there's no LUKS/decrypt prompt, and loading nvidia in the initrd caused
+  # two problems: (1) it bound the dGPU before the main udev was listening,
+  # so nixpkgs's bind→power/control=auto fine-grained-PM rule never fired and
+  # the GPU could never runtime-suspend; (2) it gave Plymouth a second
+  # display-less KMS device (nvidia-drm "Cannot find any crtc") that glitched
+  # the splash. nvidia is loaded in the main system via boot.kernelModules.
+  boot.initrd.kernelModules = [ "i915" ];
+  boot.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" ];
   # video= locks the panel to its native 1920x1080@144 mode early.
   # quiet + rd.* params: "silent boot" — keep console noise out so
   # Plymouth's splash is the only thing on screen (press Esc to see logs).
@@ -112,6 +120,8 @@ in
 
   # Noctalia autostart + IPC keybinds (Sway/Scroll syntax)
   environment.etc."sway/config.d/noctalia.conf".text = ''
+    exec foot --server
+
     exec ${noctalia}/bin/noctalia
 
     set $ipc ${noctalia}/bin/noctalia msg
@@ -120,6 +130,7 @@ in
     bindsym $mod+c      exec $ipc panel-toggle clipboard
     bindsym $mod+Shift+e exec $ipc panel-toggle session
     bindsym $mod+comma  exec $ipc settings-toggle
+    bindsym $mod+t      exec $ipc theme-mode-toggle
     bindsym --locked XF86AudioRaiseVolume   exec $ipc volume-up
     bindsym --locked XF86AudioLowerVolume   exec $ipc volume-down
     bindsym --locked XF86AudioMute          exec $ipc volume-mute
@@ -149,14 +160,15 @@ in
     set $up k
     set $right l
     # Your preferred terminal emulator
-    set $term foot
+    set $term footclient
     # Your preferred application launcher
     set $menu wmenu-run
 
     ### Output configuration
     #
-    # Default wallpaper (more resolutions are available in /run/current-system/sw/share/backgrounds/sway/)
-    output * bg /run/current-system/sw/share/backgrounds/sway/Sway_Wallpaper_Blue_1920x1080.png fill
+    # Noctalia manages the wallpaper (persisted, via `noctalia msg wallpaper-set`);
+    # we intentionally do NOT set `output * bg` here, since Sway's own `swaybg`
+    # would override Noctalia's wallpaper on every reload/rebuild.
     #
     # Example configuration:
     #
@@ -372,6 +384,18 @@ in
   # Make Electron apps use Wayland
   environment.variables.NIXOS_OZONE_WL = "1";
 
+  # Hide the NVIDIA Vulkan/EGL ICDs from the whole session so no app
+  # enumerates (and opens) /dev/dri/renderD129 during loader init. Any open
+  # render-node FD pins NVIDIA's runtime-PM count > 0 and blocks RTD3, so the
+  # dGPU would never sleep (light stays on). With these set, libvulkan/GLVND
+  # load Mesa only → only the Intel node is ever opened → RTD3 can engage.
+  # PRIME offload still works via the custom `nvidia-offload` wrapper below,
+  # which overrides these vars back to the NVIDIA ICDs.
+  environment.sessionVariables = {
+    VK_ICD_FILENAMES = "${pkgs.mesa}/share/vulkan/icd.d/intel_icd.x86_64.json";
+    __EGL_VENDOR_LIBRARY_FILENAMES = "${pkgs.mesa}/share/glvnd/egl_vendor.d/50_mesa.json";
+  };
+
   # Battery Efficiency
   services.power-profiles-daemon.enable = true; # Power profiles (balanced/power-saver/performance)
   services.upower.enable = true; # Battery status reporting via D-Bus
@@ -392,8 +416,15 @@ in
   # Colon-free stable symlink for the Intel iGPU. WLR_DRM_DEVICES uses ':' as a
   # list separator, so the by-path name (pci-0000:00:02.0-card) breaks parsing.
   # Keyed on PCI path → survives card0/card1 enumeration swaps across reboots.
+  #
+  # Also force the NVIDIA dGPU into PCI runtime PM (power/control=auto).
+  # nixpkgs's built-in fine-grained rule only matches ACTION=="bind"; that's
+  # fragile (and was missed entirely when nvidia used to bind in the initrd).
+  # Matching "add|bind" covers coldplug replay too, so control=auto is set
+  # reliably → with zero clients the GPU enters RTD3 and powers off.
   services.udev.extraRules = ''
     SUBSYSTEM=="drm", ENV{ID_PATH}=="pci-0000:00:02.0", SYMLINK+="dri/intel"
+    ACTION=="add|bind", SUBSYSTEM=="pci", ATTR{vendor}=="0x10de", ATTR{class}=="0x030000", TEST=="power/control", ATTR{power/control}="auto"
   '';
 
   # Modern graphics stack
@@ -410,7 +441,10 @@ in
     prime = {
       offload = {
         enable = true;
-        enableOffloadCmd = true; # Provides `nvidia-offload` wrapper
+        # We ship our own `nvidia-offload` (see environment.systemPackages)
+        # that also flips VK_ICD_FILENAMES / EGL vendor to NVIDIA, so offloaded
+        # apps punch through the Intel-only loader restriction set above.
+        enableOffloadCmd = false;
       };
       intelBusId = "PCI:0:2:0";
       nvidiaBusId = "PCI:1:0:0";
@@ -430,7 +464,20 @@ in
     gnutar
     unzip
     wl-clipboard
-  ] ++ [ noctalia ];
+    gsettings-desktop-schemas  # org.gnome.desktop.interface schema → Vivaldi/Chromium reads color-scheme
+  ] ++ [ noctalia
+    # Re-enables the NVIDIA Vulkan/EGL ICDs (overriding the session's
+    # Intel-only restriction) for opt-in apps. Usage: nvidia-offload <cmd>.
+    (pkgs.writeShellScriptBin "nvidia-offload" ''
+      export __NV_PRIME_RENDER_OFFLOAD=1
+      export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
+      export __GLX_VENDOR_LIBRARY_NAME=nvidia
+      export __VK_LAYER_NV_optimus=NVIDIA_only
+      export VK_ICD_FILENAMES="${config.hardware.nvidia.package}/share/vulkan/icd.d/nvidia_icd.json"
+      export __EGL_VENDOR_LIBRARY_FILENAMES="${config.hardware.nvidia.package}/share/glvnd/egl_vendor.d/10_nvidia.json"
+      exec "$@"
+    '')
+  ];
 
   fonts.packages = with pkgs; [
     nerd-fonts.commit-mono
@@ -452,6 +499,21 @@ in
   # The Python Secret Sauce: nix-ld
   # This allows pre-compiled binaries (like those uv/pip download) to run
   programs.nix-ld.enable = true;
+
+  # dconf (D-Bus settings store). The Noctalia `color-scheme-sync` hook writes
+  # the freedesktop color-scheme here so Chromium-based apps (Vivaldi) follow
+  # the active light/dark mode.
+  programs.dconf.enable = true;
+
+  # Bridge the dconf color-scheme to the freedesktop portal interface that
+  # Chromium-based apps (Vivaldi) query for prefers-color-scheme. Without this
+  # the gtk backend never runs, so Vivaldi can't see the value dconf holds.
+  xdg.portal = {
+    enable = true;
+    xdgOpenUsePortal = false;              # keep Vivaldi's own link handling
+    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
+    config.common.default = [ "gtk" ];
+  };
 
   # Nix Settings
   nix.settings.experimental-features = [ "nix-command" "flakes" ];

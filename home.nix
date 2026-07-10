@@ -1,4 +1,4 @@
-{ pkgs, inputs, ... }:
+{ config, pkgs, inputs, ... }:
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
   # (`theme_mode_changed`). It reads the resolved mode and points Sway's seat
@@ -6,13 +6,77 @@ let
   # tone of the UI — visible on both light and dark backgrounds.
   cursor-sync-theme = pkgs.writeShellScriptBin "cursor-sync-theme" ''
     mode=$(noctalia msg theme-mode-get 2>/dev/null | tr -d '[:space:]')
-    cur=phinger-cursors-light
-    [ "$mode" = "dark" ] && cur=phinger-cursors-dark
+    cur=phinger-cursors-dark
+    [ "$mode" = "dark" ] && cur=phinger-cursors-light
     swaymsg "seat * xcursor_theme $cur 24" 2>/dev/null || true
+  '';
+
+  # Noctalia publishes its resolved mode via IPC but does not write the
+  # freedesktop color-scheme that Chromium-based apps (Vivaldi) read to set
+  # prefers-color-scheme (and, with "Use System Theme", their own chrome).
+  # This hook mirrors the mode into dconf on startup and on every switch.
+  color-scheme-sync = pkgs.writeShellScriptBin "color-scheme-sync" ''
+    mode=$(noctalia msg theme-mode-get 2>/dev/null | tr -d '[:space:]')
+    case "$mode" in
+      dark)  dconf write /org/gnome/desktop/interface/color-scheme "'prefer-dark'"  2>/dev/null || true ;;
+      light) dconf write /org/gnome/desktop/interface/color-scheme "'prefer-light'" 2>/dev/null || true ;;
+    esac
+  '';
+
+  # Switches foot's native dark/light theme in-process by signaling the foot
+  # server (SIGUSR1=dark, SIGUSR2=light). The server applies it to all clients
+  # and sets the default for future clients — instant, no restart.
+  foot-sync-theme = pkgs.writeShellScriptBin "foot-sync-theme" ''
+    mode=$(noctalia msg theme-mode-get 2>/dev/null | tr -d '[:space:]')
+    case "$mode" in
+      dark)  ${pkgs.procps}/bin/pkill -USR1 -x foot 2>/dev/null || true ;;
+      light) ${pkgs.procps}/bin/pkill -USR2 -x foot 2>/dev/null || true ;;
+    esac
+  '';
+
+  # ComfyUI launcher for the hybrid Intel + RTX 3050 (RTD3) setup.
+  # Scopes NVIDIA PRIME offload to *this process only*: CUDA targets the dGPU
+  # while the rest of the session stays on Mesa (the global Intel-only
+  # Vulkan/EGL restriction in configuration.nix is left untouched). Launching
+  # wakes the dGPU (RTD3 exits); quitting drops the runtime-PM ref so the GPU
+  # re-suspends. The pip-installed PyTorch CUDA wheel bundles its own CUDA
+  # runtime but still needs the driver's libcuda.so.1 — the NVIDIA driver
+  # installs it into /run/opengl-driver/lib, which we surface to both the
+  # nix-ld and the regular linker search paths.
+  comfyui = pkgs.writeShellScriptBin "comfyui" ''
+    cd ~/ComfyUI 2>/dev/null || {
+      echo "ComfyUI workspace not found at ~/ComfyUI." >&2
+      echo "Run comfyui-bootstrap first." >&2
+      exit 1
+    }
+    export __NV_PRIME_RENDER_OFFLOAD=1
+    export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
+    export __GLX_VENDOR_LIBRARY_NAME=nvidia
+    export __VK_LAYER_NV_optimus=NVIDIA_only
+    export LD_LIBRARY_PATH="/run/opengl-driver/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export NIX_LD_LIBRARY_PATH="/run/opengl-driver/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
+    exec comfy launch "$@"
+  '';
+
+  # One-time provisioning of the comfy-cli-managed ComfyUI install (~/ComfyUI).
+  # Installs comfy-cli as a uv tool, then clones ComfyUI and builds a
+  # CUDA-capable Python venv (pick NVIDIA when prompted). Re-runnable. The
+  # install + models live outside the Nix store by design — ComfyUI releases
+  # weekly and models are tens of GB; only the launcher and .desktop are tracked.
+  comfyui-bootstrap = pkgs.writeShellScriptBin "comfyui-bootstrap" ''
+    set -e
+    mkdir -p ~/ComfyUI
+    uv tool install comfy-cli
+    cd ~/ComfyUI
+    comfy install
+    echo "Done. Launch with: comfyui  (web UI at http://localhost:8188)"
   '';
 in {
   home.username = "bob";
   home.homeDirectory = "/home/bob";
+
+  # Put uv-installed CLI tools (e.g. comfy-cli from comfyui-bootstrap) on PATH.
+  home.sessionPath = [ "${config.home.homeDirectory}/.local/bin" ];
 
   # Cursor: phinger (dark baseline). GTK/env/legacy-xcursor are wired here; the
   # live compositor cursor is swapped by the `cursor-sync-theme` hook above and
@@ -24,14 +88,62 @@ in {
     gtk.enable = true;
   };
 
-  # Foot terminal. Noctalia owns the generated theme file at
-  # ~/.config/foot/themes/noctalia (regenerated on light/dark switch); we point
-  # foot at it (top-level `include`, NOT inside [main]) and set the font.
+  # Foot terminal (server mode). Both palettes are defined natively so foot
+  # holds [colors-dark] and [colors-light] at once and can switch in-process via
+  # SIGUSR1/SIGUSR2 — driven by the `foot-sync-theme` Noctalia hook — with no
+  # restart and no reliance on foot's config file watcher.
+  # Palettes are Kanagawa: Wave (dark) / Lotus (light), captured from Noctalia.
   xdg.configFile."foot/foot.ini".text = ''
-    include=~/.config/foot/themes/noctalia
-
     [main]
     font = CommitMono Nerd Font Mono:size=14
+
+    initial-color-theme=dark
+
+    [colors-dark]
+    foreground=dcd7ba
+    background=1f1f28
+    regular0=090618
+    regular1=c34043
+    regular2=76946a
+    regular3=c0a36e
+    regular4=7e9cd8
+    regular5=957fb8
+    regular6=6a9589
+    regular7=c8c093
+    bright0=727169
+    bright1=e82424
+    bright2=98bb6c
+    bright3=e6c384
+    bright4=7fb4ca
+    bright5=938aa9
+    bright6=7aa89f
+    bright7=dcd7ba
+    selection-foreground=c8c093
+    selection-background=2d4f67
+    cursor=1f1f28 c8c093
+
+    [colors-light]
+    foreground=545464
+    background=f2ecbc
+    regular0=1f1f28
+    regular1=c84053
+    regular2=6f894e
+    regular3=77713f
+    regular4=4d699b
+    regular5=b35b79
+    regular6=597b75
+    regular7=545464
+    bright0=8a8980
+    bright1=d7474b
+    bright2=6e915f
+    bright3=836f4a
+    bright4=6693bf
+    bright5=624c83
+    bright6=5e857a
+    bright7=43436c
+    selection-foreground=f2ecbc
+    selection-background=c9cbd1
+    cursor=f2ecbc 43436c
   '';
 
   # Helix: use the noctalia theme file noctalia generates at
@@ -46,9 +158,23 @@ in {
   # (verify with `noctalia config validate`).
   xdg.configFile."noctalia/config.toml".text = ''
     [hooks]
-    started = [ "cursor-sync-theme" ]
-    theme_mode_changed = [ "cursor-sync-theme" ]
+    started = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
+    theme_mode_changed = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
   '';
+
+  # Launcher entry so ComfyUI appears in wmenu / the Noctalia launcher.
+  # Runs in a foot window so server logs are visible; closing the window stops
+  # the server and lets the dGPU re-suspend (RTD3). The web UI is at
+  # http://localhost:8188 once it's up.
+  xdg.desktopEntries.comfyui = {
+    name = "ComfyUI";
+    genericName = "Diffusion Model Studio";
+    comment = "Node-based diffusion GUI (runs on the NVIDIA dGPU)";
+    exec = "foot -- comfyui";
+    terminal = false;
+    type = "Application";
+    categories = [ "Graphics" "AudioVideo" ];
+  };
 
   home.packages = [
     # GUI
@@ -103,8 +229,15 @@ in {
     pkgs.yt-dlp
     pkgs.ffmpeg
 
-    # Drives the phinger light/dark cursor swap (see cursor-sync-theme above).
+    # Drives the phinger light/dark cursor swap, the freedesktop color-scheme
+    # (for Vivaldi/Chromium), and the in-process foot theme switch on toggle.
     cursor-sync-theme
+    color-scheme-sync
+    foot-sync-theme
+
+    # ComfyUI launcher + one-time bootstrap (comfy-cli-managed install).
+    comfyui
+    comfyui-bootstrap
   ];
 
   programs.zsh = {
@@ -138,9 +271,15 @@ in {
     };
 
     # Suffix-free substitution anywhere on the line.
-    # `ls CLIP`  →  `ls | wl-copy`  (copies the command's stdout to clipboard)
+    #   CLIP    stdout only             CLIPER   stdout + stderr
+    #   CLIPT   stdout, last 50 lines   CLIPERT  stdout + stderr, last 50 lines
+    # e.g. `ls CLIP` → `ls | wl-copy`
+    #      `nh os switch . CLIPERT` → `nh os switch . 2>&1 | tail -n 50 | wl-copy`
     shellGlobalAliases = {
       CLIP = "| wl-copy";
+      CLIPT = "| tail -n 50 | wl-copy";
+      CLIPER = "2>&1 | wl-copy";
+      CLIPERT = "2>&1 | tail -n 50 | wl-copy";
     };
 
     # zsh-vi-mode: vim normal/insert mode (Esc to toggle).
