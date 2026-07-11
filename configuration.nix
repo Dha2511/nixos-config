@@ -85,7 +85,7 @@ in
   # Configure keymap in X11
   services.xserver.xkb = {
     layout = "us";
-    variant = "";
+    variant = "altgr-intl";
   };
 
   # Configure console keymap
@@ -219,6 +219,11 @@ in
         drag enabled
         drag_lock enabled
         tap enabled
+    }
+
+    input type:keyboard {
+        xkb_layout "us"
+        xkb_variant "altgr-intl"
     }
 
     ### Key bindings
