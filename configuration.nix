@@ -15,10 +15,14 @@ in
 
   # Bootloader.
   boot.loader.systemd-boot.enable = true;
-  # ESP is ~1 GB and initrd is ~200 MB (NVIDIA modules baked into initrd),
-  # so cap retained boot entries or /boot fills up. Raise if you enlarge the ESP.
-  boot.loader.systemd-boot.configurationLimit = 3;
+  # ESP is 1 GB. Each entry ≈ 66 MB (13 MB kernel + 53 MB initrd; NVIDIA is
+  # intentionally NOT in the initrd, so it's small). 5 entries ≈ 340 MB,
+  # leaving ~680 MB headroom. Stay ≤ ~10.
+  boot.loader.systemd-boot.configurationLimit = 5;
   boot.loader.efi.canTouchEfiVariables = true;
+  # Boot immediately — no menu shown. Hold Space during boot to open the menu
+  # (e.g. to pick a previous generation if a switch fails to boot).
+  boot.loader.timeout = 0;
 
   # Early KMS: load i915 in initrd so modesetting happens at boot.
   # i915 drives the internal panel (eDP-1) for a clean high-res fbcon.
@@ -535,7 +539,23 @@ in
   };
 
   # Nix Settings
-  nix.settings.experimental-features = [ "nix-command" "flakes" ];
+  nix.settings = {
+    experimental-features = [ "nix-command" "flakes" ];
+    auto-optimise-store = true;  # hardlink-dedup on every build
+  };
+
+  # Weekly GC: drop generations older than 14 days, then collect garbage.
+  # At ~2 rebuilds/day keeps ~28 generations — well above the 5 boot-menu
+  # entries. Cleans system + home-manager profiles; persistent (default) lets
+  # missed runs (laptop suspended) catch up.
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 14d";
+  };
+
+  # Periodic full optimise pass (complements auto-optimise-store).
+  nix.optimise.automatic = true;
 
   # Some programs need SUID wrappers, can be configured further or are
   # started in user sessions.
