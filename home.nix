@@ -39,7 +39,7 @@ let
   # the default loader path. Collected into one /lib to keep the wrapper tidy.
   comfyui-host-libs = pkgs.buildEnv {
     name = "comfyui-host-libs";
-    paths = [ pkgs.libx11 pkgs.libxext pkgs.libxcb pkgs.libxau pkgs.libxdmcp ];
+    paths = [ pkgs.libx11 pkgs.libxext pkgs.libxcb pkgs.libxau pkgs.libxdmcp pkgs.libglvnd ];
   };
 
   # ComfyUI launcher for the hybrid Intel + RTX 3050 (RTD3) setup.
@@ -180,6 +180,15 @@ in {
     [hooks]
     started = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
     theme_mode_changed = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
+
+    # Stop Noctalia's builtin foot template from rewriting ~/.config/foot/foot.ini.
+    # On launch/theme-switch it injected `include=~/.config/foot/themes/noctalia`
+    # and recreated foot.ini as a regular file, clobbering home-manager's symlink
+    # and aborting every `nh os switch`. home-manager owns foot.ini now; live
+    # light/dark switching still works via the foot-sync-theme SIGUSR1/2 hook.
+    # Only `helix` remains Noctalia-managed (helix can't hot-reload themes).
+    [theme.templates]
+    builtin_ids = [ "helix" ]
   '';
 
   # Launcher entry so ComfyUI appears in wmenu / the Noctalia launcher.
