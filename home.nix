@@ -39,7 +39,7 @@ let
   # the default loader path. Collected into one /lib to keep the wrapper tidy.
   comfyui-host-libs = pkgs.buildEnv {
     name = "comfyui-host-libs";
-    paths = [ pkgs.libx11 pkgs.libxext pkgs.libxcb pkgs.libxau pkgs.libxdmcp pkgs.libglvnd ];
+    paths = [ pkgs.libx11 pkgs.libxext pkgs.libxcb pkgs.libxau pkgs.libxdmcp pkgs.libglvnd pkgs.glib.out pkgs.zlib ];
   };
 
   # ComfyUI launcher for the hybrid Intel + RTX 3050 (RTD3) setup.
@@ -72,6 +72,19 @@ let
     export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib:${comfyui-host-libs}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export NIX_LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib:${comfyui-host-libs}/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
     export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
+    # Depthflow (via shaderflow) forces an EGL backend by default (WINDOW_EGL=1),
+    # but Mesa EGL can't initialize headless here: it chases the NVIDIA DRM device
+    # through DRI2 and fails ("DRI2: failed to load driver" → eglInitialize 0x3001),
+    # since Mesa has no DRI driver for NVIDIA. Disabling the flag makes shaderflow
+    # pass backend=None, so moderngl falls back to its default GLX path on DISPLAY
+    # (works fine — GL 3.3 via NVIDIA GLX, which is what the nodes request).
+    export WINDOW_EGL=0
+    # Pin the system libglvnd GL/EGL dispatch lib as the canonical
+    # libGLdispatch.so.0 so bundled copies shipped inside some wheels (e.g.
+    # imgui_bundle.libs, pulled in by shaderflow) can't shadow it. Defensive
+    # hygiene for the GLX dispatch path moderngl now uses; harmless to cv2 and
+    # comfy_angle.
+    export LD_PRELOAD="${comfyui-host-libs}/lib/libGLdispatch.so.0''${LD_PRELOAD:+:$LD_PRELOAD}"
     export CC="${pkgs.stdenv.cc}/bin/cc"
     export PATH="${pkgs.stdenv.cc}/bin:$PATH"
     exec comfy launch "$@"
