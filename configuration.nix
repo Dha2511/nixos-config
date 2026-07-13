@@ -99,7 +99,7 @@ in
   users.users.bob = {
     isNormalUser = true;
     description = "Bob";
-    extraGroups = [ "networkmanager" "wheel" ];
+    extraGroups = [ "networkmanager" "wheel" "lp" "lpadmin" "scanner" ];
     packages = with pkgs; [];
     shell = pkgs.zsh;
   };
@@ -488,6 +488,10 @@ in
     unzip
     wl-clipboard
     gsettings-desktop-schemas  # org.gnome.desktop.interface schema → Vivaldi/Chromium reads color-scheme
+    # Printing (network HP printer) — CLI tools
+    hplipWithPlugin   # hp-setup / hp-info / hp-toolbox / hp-scan (includes the HP binary plugin)
+    cups              # lp / lpstat / lpadmin / lpinfo user-facing CLI
+    nmap              # network discovery (locate printer IP + general use)
   ] ++ [ noctalia
     # Re-enables the NVIDIA Vulkan/EGL ICDs (overriding the session's
     # Intel-only restriction) for opt-in apps. Usage: nvidia-offload <cmd>.
@@ -564,6 +568,27 @@ in
   #   enable = true;
   #   enableSSHSupport = true;
   # };
+
+  # --- Printing (network HP printer over Wi-Fi) ---
+  # CUPS is the print daemon; hplipWithPlugin provides the HP backend +
+  # proprietary plugin most consumer HP printers (DeskJet/Envy/OfficeJet)
+  # require to actually print.
+  services.printing = {
+    enable = true;
+    drivers = [ pkgs.hplipWithPlugin ];
+  };
+
+  # Avahi: mDNS discovery so the printer is reachable as <hostname>.local
+  # and shows up in `lpinfo -v`. Required for driverless IPP discovery.
+  services.avahi = {
+    enable = true;
+    nssmdns4 = true;
+    openFirewall = true;
+  };
+
+  # Scanning via SANE (HP all-in-one). Uses hplipWithPlugin's backend.
+  hardware.sane.enable = true;
+  hardware.sane.extraBackends = [ pkgs.hplipWithPlugin ];
 
   # List services that you want to enable:
 
