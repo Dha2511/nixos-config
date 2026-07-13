@@ -194,12 +194,15 @@ in {
     started = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
     theme_mode_changed = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
 
-    # Stop Noctalia's builtin foot template from rewriting ~/.config/foot/foot.ini.
-    # On launch/theme-switch it injected `include=~/.config/foot/themes/noctalia`
-    # and recreated foot.ini as a regular file, clobbering home-manager's symlink
-    # and aborting every `nh os switch`. home-manager owns foot.ini now; live
-    # light/dark switching still works via the foot-sync-theme SIGUSR1/2 hook.
-    # Only `helix` remains Noctalia-managed (helix can't hot-reload themes).
+    # Keep Noctalia's builtin foot template OFF so it doesn't rewrite
+    # ~/.config/foot/foot.ini (it injected `include=.../themes/noctalia` and
+    # recreated foot.ini as a regular file, clobbering home-manager's symlink and
+    # aborting every `nh os switch`). home-manager owns foot.ini; live light/dark
+    # switching still works via the foot-sync-theme SIGUSR1/2 hook. Only `helix`
+    # stays Noctalia-managed (helix can't hot-reload themes).
+    # CAVEAT: Noctalia layers ~/.local/state/noctalia/settings.toml (GUI-managed)
+    # ABOVE this file, so if the Settings UI ever re-enables foot it wins — keep
+    # the foot template off there too (or `rm settings.toml` to clear overrides).
     [theme.templates]
     builtin_ids = [ "helix" ]
   '';
@@ -232,7 +235,7 @@ in {
     pkgs.davinci-resolve
     pkgs.obs-studio
     pkgs.loupe
-    pkgs.stirling-pdf
+    pkgs.stirling-pdf-desktop
     pkgs.zotero
     pkgs.anki
     pkgs.celluloid
