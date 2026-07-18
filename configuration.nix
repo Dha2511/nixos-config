@@ -441,6 +441,21 @@ in
   services.power-profiles-daemon.enable = true; # Power profiles (balanced/power-saver/performance)
   services.upower.enable = true; # Battery status reporting via D-Bus
 
+  # Compressed RAM swap (zstd). Normally stays empty; under memory pressure the
+  # kernel compresses cold pages into RAM instead of hitting the 8.8G disk-swap
+  # partition (which stays as a lower-priority fallback). zram is swapon'd with a
+  # higher priority, so it's used first and the disk swap only catches overflow.
+  # Net effect: stays responsive when RAM fills up instead of grinding on disk.
+  zramSwap = {
+    enable = true;
+    algorithm = "zstd";
+  };
+
+  # Firmware updates (LVFS). `fwupdmgr refresh && fwupdmgr get-updates` checks
+  # for BIOS/EC updates — an MSI firmware update is the one thing that might
+  # officially enable battery charge limiting, so worth having regardless.
+  services.fwupd.enable = true;
+
   # Audio
   security.rtkit.enable = true; # Realtime scheduling for PipeWire (low-latency audio)
   services.pipewire = {
