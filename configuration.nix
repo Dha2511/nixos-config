@@ -6,6 +6,25 @@
 
 let
   noctalia = inputs.noctalia.packages.${pkgs.stdenv.hostPlatform.system}.default;
+
+  # Toggles the keyboard layout group (us <-> graphite) and pops a transient
+  # Noctalia notification with the resulting layout name. jq parses the active
+  # layout out of `swaymsg get_inputs`; libnotify routes to Noctalia's daemon.
+  kb-toggle = pkgs.writeShellApplication {
+    name = "kb-toggle";
+    runtimeInputs = [ pkgs.jq pkgs.libnotify pkgs.sway ];
+    text = ''
+      cur=$(swaymsg -t get_inputs | jq -r '
+        [ .[] | select(.type == "keyboard") | select(.xkb_layout_names | length > 0)
+          | .xkb_layout_names[.xkb_active_layout_index] ] | .[0] // empty')
+      swaymsg 'input type:keyboard xkb_switch_layout next' >/dev/null
+      if [[ "$cur" == *[Gg]raphite* ]]; then
+        notify-send --transient --urgency=low --icon=input-keyboard --app-name=keyboard "Keyboard layout" "QWERTY"
+      else
+        notify-send --transient --urgency=low --icon=input-keyboard --app-name=keyboard "Keyboard layout" "Graphite"
+      fi
+    '';
+  };
 in
 {
   imports =
@@ -87,10 +106,18 @@ in
     LC_TIME = "da_DK.UTF-8";
   };
 
-  # Configure keymap in X11
+  # Configure keymap (XKB): US(altgr-intl) is the default (group 0), Graphite
+  # (custom) is group 1 — both carry the altgr-intl AltGr layer for Danish
+  # (ae/oslash/aring) and dead keys. Toggle groups in the Sway config below via
+  # xkb_switch_layout (grp:win_space_toggle would collide with Noctalia's $mod+space).
   services.xserver.xkb = {
-    layout = "us";
-    variant = "altgr-intl";
+    layout = "us,graphite";
+    variant = "altgr-intl,";
+    extraLayouts.graphite = {
+      description = "Graphite (intl., with AltGr dead keys)";
+      languages = [ "eng" ];
+      symbolsFile = ./xkb/graphite;
+    };
   };
 
   # Configure console keymap
@@ -227,8 +254,8 @@ in
     }
 
     input type:keyboard {
-        xkb_layout "us"
-        xkb_variant "altgr-intl"
+        xkb_layout "us,graphite"
+        xkb_variant "altgr-intl,"
     }
 
     ### Key bindings
@@ -243,6 +270,10 @@ in
 
         # Start your launcher
         bindsym $mod+d exec $menu
+
+        # Toggle keyboard layout: QWERTY <-> Graphite (both keep altgr-intl).
+        # slash sits on the same physical key in both layouts, so this is stable.
+        bindsym $mod+slash exec ${kb-toggle}/bin/kb-toggle
 
         # Drag floating windows by holding down $mod and left mouse button.
         # Resize them with right mouse button + $mod.
