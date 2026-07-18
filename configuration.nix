@@ -574,6 +574,11 @@ in
   # This allows pre-compiled binaries (like those uv/pip download) to run
   programs.nix-ld.enable = true;
 
+  # direnv — auto-loads devShells on `cd` into a flake repo (e.g. trellis-lfm).
+  # nix-direnv caches `nix develop` results so entry is instant after the first.
+  programs.direnv.enable = true;
+  programs.direnv.nix-direnv.enable = true;
+
   # dconf (D-Bus settings store). The Noctalia `color-scheme-sync` hook writes
   # the freedesktop color-scheme here so Chromium-based apps (Vivaldi) follow
   # the active light/dark mode.
