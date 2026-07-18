@@ -72,6 +72,10 @@ let
     export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib:${comfyui-host-libs}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export NIX_LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib:${comfyui-host-libs}/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
     export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
+    # Let the CUDA caching allocator satisfy a request from non-contiguous
+    # (physical) segments without splitting/compacting — shrinks fragmentation
+    # OOMs on the 4 GB dGPU (e.g. FILM VFI). No-op cost, helps borderline cases.
+    export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
     # Depthflow (via shaderflow) forces an EGL backend by default (WINDOW_EGL=1),
     # but Mesa EGL can't initialize headless here: it chases the NVIDIA DRM device
     # through DRI2 and fails ("DRI2: failed to load driver" → eglInitialize 0x3001),
@@ -87,6 +91,14 @@ let
     export LD_PRELOAD="${comfyui-host-libs}/lib/libGLdispatch.so.0''${LD_PRELOAD:+:$LD_PRELOAD}"
     export CC="${pkgs.stdenv.cc}/bin/cc"
     export PATH="${pkgs.stdenv.cc}/bin:$PATH"
+    # Self-heal the cupy dep GMFSS Fortuna VFI needs. find_spec only resolves
+    # the module spec (no CUDA import), so the check is instant; we install
+    # cupy-cuda13x (matching the cu130 PyTorch wheel) into the venv only if
+    # absent. A failure (e.g. offline) is non-fatal — non-GMFSS flows still run.
+    if ! .venv/bin/python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('cupy') else 1)" 2>/dev/null; then
+      echo "Installing cupy-cuda13x for GMFSS Fortuna VFI..." >&2
+      uv pip install --python "$HOME/comfy/ComfyUI/.venv/bin/python" cupy-cuda13x || true
+    fi
     exec comfy launch "$@"
   '';
 
@@ -102,6 +114,11 @@ let
     uv tool install comfy-cli
     cd ~/comfy/ComfyUI
     comfy install
+    # GMFSS Fortuna VFI needs cupy; pin to the CUDA 13 build matching the cu130
+    # PyTorch wheel comfy-cli installs. Non-fatal: the comfyui launcher also
+    # re-checks on every launch and installs it if still missing.
+    uv pip install --python "$HOME/comfy/ComfyUI/.venv/bin/python" cupy-cuda13x \
+      || echo "cupy install deferred — the comfyui launcher will retry on next launch."
     echo "Done. Launch with: comfyui  (models go in ~/comfy/ComfyUI/models; web UI at http://localhost:8188)"
   '';
 in {
