@@ -121,6 +121,68 @@ let
       || echo "cupy install deferred — the comfyui launcher will retry on next launch."
     echo "Done. Launch with: comfyui  (models go in ~/comfy/ComfyUI/models; web UI at http://localhost:8188)"
   '';
+
+  # Stirling-PDF desktop is a Tauri app whose frontend is rendered by
+  # WebKitGTK. Its DMA-buf renderer is buggy on this hybrid Intel/NVIDIA +
+  # Wayland setup: the UI redraws sluggishly under interaction, on both the
+  # iGPU and the dGPU (verified by running with WEBKIT_DISABLE_DMABUF_RENDERER=1
+  # on both paths). Disabling it makes the frontend responsive. We also pull in
+  # gst-plugins-base so WebKit stops warning about the missing `appsink`
+  # element (used by its HTML5 media pipeline).
+  stirling-pdf-wrapped = pkgs.symlinkJoin {
+    name = "stirling-pdf-wrapped";
+    paths = [ pkgs.stirling-pdf-desktop ];
+    nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
+    postBuild = ''
+      wrapProgram $out/bin/stirling-pdf \
+        --set WEBKIT_DISABLE_DMABUF_RENDERER 1 \
+        --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0"
+    '';
+  };
+
+  # Prebuilt official Blender (bundles CUDA + OptiX runtime kernels), pinned to
+  # the SHA-256 blender.org publishes alongside the release:
+  #   https://download.blender.org/release/Blender5.2/blender-5.2.0.sha256
+  # Only the ELF interpreter is patchelf'd (NixOS has no system ld-linux) and the
+  # runtime system libs are surfaced via LD_LIBRARY_PATH — /run/opengl-driver/lib
+  # supplies libcuda.so.1, libGLdispatch, etc. for CUDA/OptiX + GL. Two .desktop
+  # entries (below) launch the SAME binary: one plain (Intel iGPU + CPU Cycles),
+  # one via `nvidia-offload` (viewport + Cycles CUDA/OptiX on the RTX 3050 dGPU,
+  # RTD3 re-suspends it on quit).
+  blender-bin =
+    let
+      version = "5.2.0";
+      runtimeDeps = with pkgs; [
+        wayland libdecor libxkbcommon libGLU libglvnd numactl SDL2 libdrm
+        ocl-icd stdenv.cc.cc.lib openal alsa-lib pulseaudio vulkan-loader zlib
+        xorg.libX11 xorg.libXi xorg.libXxf86vm xorg.libXfixes xorg.libXrender xorg.libSM xorg.libICE
+      ];
+    in
+    pkgs.stdenv.mkDerivation {
+      pname = "blender-bin";
+      inherit version;
+      src = pkgs.fetchurl {
+        url = "https://download.blender.org/release/Blender5.2/blender-${version}-linux-x64.tar.xz";
+        sha256 = "96f6c181a30f4950607839dc84d42a354b250d8a0231b098b59b7bc69c351c48";
+      };
+      nativeBuildInputs = [ pkgs.makeWrapper pkgs.patchelf ];
+      dontUnpack = true;
+      installPhase = ''
+        runHook preInstall
+        mkdir -p $out/libexec
+        tar -xf $src -C $out/libexec
+        cd $out/libexec && mv blender-* blender
+        mkdir -p $out/bin $out/share/applications $out/share/icons/hicolor/scalable/apps
+        mv blender/blender.desktop $out/share/applications/
+        mv blender/blender.svg     $out/share/icons/hicolor/scalable/apps/ 2>/dev/null || true
+        patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/blender
+        patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/*/python/bin/python3* 2>/dev/null || true
+        makeWrapper $out/libexec/blender/blender $out/bin/blender \
+          --prefix LD_LIBRARY_PATH : /run/opengl-driver/lib:${pkgs.lib.makeLibraryPath runtimeDeps}
+        runHook postInstall
+      '';
+      meta.mainProgram = "blender";
+    };
 in {
   home.username = "bob";
   home.homeDirectory = "/home/bob";
@@ -238,12 +300,38 @@ in {
     categories = [ "Graphics" "AudioVideo" ];
   };
 
+  # Two ways to launch the SAME Blender binary: plain (Intel iGPU + CPU Cycles,
+  # battery-friendly) and via `nvidia-offload` (viewport + Cycles CUDA/OptiX on
+  # the RTX 3050 dGPU; RTD3 re-suspends it on quit). The plain entry shadows the
+  # packaged blender.desktop and claims the .blend mimetype as the default.
+  xdg.desktopEntries.blender = {
+    name = "Blender (Intel iGPU)";
+    genericName = "3D Modeling Suite";
+    comment = "Viewport on Intel iGPU, Cycles on CPU (battery-friendly)";
+    exec = "blender %F";
+    icon = "blender";
+    terminal = false;
+    type = "Application";
+    categories = [ "Graphics" "3DGraphics" ];
+    mimeType = [ "application/x-blender" ];
+  };
+  xdg.desktopEntries.blender-nvidia = {
+    name = "Blender (NVIDIA GPU)";
+    genericName = "3D Modeling Suite";
+    comment = "Viewport + Cycles CUDA/OptiX on the RTX 3050 dGPU";
+    exec = "nvidia-offload blender %F";
+    icon = "blender";
+    terminal = false;
+    type = "Application";
+    categories = [ "Graphics" "3DGraphics" ];
+  };
+
   home.packages = [
     # GUI
     pkgs.zed-editor
     pkgs.helix
     pkgs.vim
-    pkgs.blender
+    blender-bin
     pkgs.typst
     pkgs.bazecor
     pkgs.prusa-slicer
@@ -252,7 +340,7 @@ in {
     pkgs.davinci-resolve
     pkgs.obs-studio
     pkgs.loupe
-    pkgs.stirling-pdf-desktop
+    stirling-pdf-wrapped
     pkgs.zotero
     pkgs.anki
     pkgs.celluloid
