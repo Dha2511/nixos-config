@@ -1,0 +1,20 @@
+--- a/drivers/platform/x86/msi-ec.c
++++ b/drivers/platform/x86/msi-ec.c
+@@ -1332,8 +1332,15 @@
+ 		}
+ 	}
+ 
+-	pr_warn("Firmware version is not supported: '%s'\n", fw_version);
+-	return -EOPNOTSUPP;
++	// MSI Thin 15 B13UC (MS-16R8) is not in the upstream allowlist but shares
++	// the GF63 Thin 11UC (CONF12) EC register layout. Force that config so the
++	// charge-control sysfs attributes are exposed. EXPERIMENTAL: register map
++	// is assumed, not verified, for this board -- remove this patch if it misbehaves.
++	pr_info("msi-ec: unrecognized firmware '%s'; forcing CONF12 (GF63 Thin 11UC map) experimentally\n",
++		fw_version);
++	conf = CONF12;
++	conf.allowed_fw = NULL;
++	return 0;
+ }
+ 
+ static int __init msi_ec_init(void)

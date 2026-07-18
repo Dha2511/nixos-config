@@ -53,7 +53,7 @@ in
   # display-less KMS device (nvidia-drm "Cannot find any crtc") that glitched
   # the splash. nvidia is loaded in the main system via boot.kernelModules.
   boot.initrd.kernelModules = [ "i915" ];
-  boot.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" ];
+  boot.kernelModules = [ "nvidia" "nvidia_modeset" "nvidia_uvm" "nvidia_drm" "msi-ec" ]; # msi-ec: MSI EC driver (battery charge cap — see "Battery charge cap" below)
   # video= locks the panel to its native 1920x1080@144 mode early.
   # quiet + rd.* params: "silent boot" — keep console noise out so
   # Plymouth's splash is the only thing on screen (press Esc to see logs).
@@ -455,6 +455,39 @@ in
   # for BIOS/EC updates — an MSI firmware update is the one thing that might
   # officially enable battery charge limiting, so worth having regardless.
   services.fwupd.enable = true;
+
+  # --- Battery charge cap (EXPERIMENTAL) ---
+  # The in-kernel msi-ec driver exposes charge-control sysfs attributes, but
+  # only for firmware strings on its hard-coded allowlist. The Thin 15 B13UC
+  # (MS-16R8, EC firmware 16R8EMS1.*) isn't listed, so the module normally
+  # refuses to load. This kernel patch makes it fall back to the GF63 Thin 11UC
+  # (CONF12) register map and load anyway — exposing charge_control_end_threshold.
+  #
+  # CAVEAT: the GF63's register map (charge-control EC addr 0xd7) is ASSUMED, not
+  # verified, for this board. If charging doesn't actually cap at 80%, or anything
+  # odd happens, remove boot.kernelPatches + the battery-charge-cap service below
+  # and rebuild. Reverting is always clean (the EC value resets on EC/BIOS reset).
+  #
+  # COST: boot.kernelPatches forces a full kernel source build, so every kernel
+  # bump re-triggers a ~20-60 min local rebuild (NVIDIA rebuilds against it too).
+  boot.kernelPatches = [
+    { name = "msi-ec-ms-16r8-fallback"; patch = ./patches/msi-ec-ms-16r8.patch; }
+  ];
+  # (msi-ec itself is appended to boot.kernelModules up with the NVIDIA modules.)
+
+  # Apply the cap once msi-ec has loaded. Runs after systemd-modules-load (which
+  # loads msi-ec) and retries briefly against ordering slack. Only the END
+  # threshold is written (one EC write) to minimise writes to the untested reg.
+  systemd.services.battery-charge-cap = {
+    description = "Cap battery charge at 80% via msi-ec";
+    after = [ "systemd-modules-load.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = "${pkgs.bash}/bin/bash -c 'for i in 1 2 3 4 5; do [ -w /sys/class/power_supply/BAT1/charge_control_end_threshold ] && { echo 80 > /sys/class/power_supply/BAT1/charge_control_end_threshold; exit 0; }; sleep 1; done; echo battery-charge-cap: charge_control_end_threshold not writable; exit 0'";
+    };
+  };
 
   # Audio
   security.rtkit.enable = true; # Realtime scheduling for PipeWire (low-latency audio)
