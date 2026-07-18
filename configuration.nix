@@ -47,13 +47,14 @@ in
     "rd.systemd.show_status=auto"
   ];
 
-  # Plymouth boot splash (minimal spinner — reliable on NVIDIA proprietary).
-  # `boot.plymouth.enable` auto-adds "splash" to kernelParams and symlinks the
-  # NixOS snowflake as the spinner's watermark. spinner is built-in, so no
-  # themePackages needed. Takes effect on next reboot (initrd rebuild).
+  # Plymouth boot splash (bgrt theme — OEM/manufacturer logo from the
+  # firmware ACPI BGRT table, rendered above a spinner). Reliable on NVIDIA
+  # proprietary. `boot.plymouth.enable` auto-adds "splash" to kernelParams;
+  # bgrt is built-in so no themePackages needed. Falls back to a plain spinner
+  # if the firmware exposes no BGRT. Takes effect on next reboot (initrd rebuild).
   boot.plymouth = {
     enable = true;
-    theme = "spinner";
+    theme = "bgrt";
   };
   boot.consoleLogLevel = 3;
   boot.initrd.verbose = false;
