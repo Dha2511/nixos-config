@@ -468,10 +468,15 @@ in
     # aptX, AAC) are tried before falling back to SBC-XQ / SBC. SBC-XQ uses
     # high-bitpool "Dual Channel" mode for near-CD quality on devices that
     # lack aptX/AAC/LDAC — works with virtually every BT headphone.
+    #
+    # Role names MUST use underscores (a2dp_source, not a2dp-source) — the SPA
+    # bluez5 plugin does exact spa_streq() matching. For a desktop that sends
+    # audio to headphones we are the *source* (a2dp_source) and the *audio
+    # gateway* for HSP/HFP (hsp_ag / hfp_ag), not the headset/handsfree side.
     wireplumber.configPackages = [
       (pkgs.writeTextDir "share/wireplumber/wireplumber.conf.d/51-bluetooth-codecs.conf" ''
         monitor.bluez.properties = {
-          bluez5.roles = [ "a2dp-sink" "hsp-hs" "hfp-hf" ]
+          bluez5.roles = [ "a2dp_source" "a2dp_sink" "hsp_ag" "hfp_ag" ]
           bluez5.codecs = [ "ldac" "aptx_hd" "aptx" "aac" "sbc_xq" "sbc" ]
           bluez5.enable-sbc-xq = true
         }

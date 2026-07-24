@@ -155,7 +155,7 @@ let
       runtimeDeps = with pkgs; [
         wayland libdecor libxkbcommon libGLU libglvnd numactl SDL2 libdrm
         ocl-icd stdenv.cc.cc.lib openal alsa-lib pulseaudio vulkan-loader zlib
-        xorg.libX11 xorg.libXi xorg.libXxf86vm xorg.libXfixes xorg.libXrender xorg.libSM xorg.libICE
+        libx11 libxi libxxf86vm libxfixes libxrender libsm libice
       ];
     in
     pkgs.stdenv.mkDerivation {
