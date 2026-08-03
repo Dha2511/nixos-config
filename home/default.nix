@@ -40,6 +40,19 @@ let
 in {
   imports = [ ./sway.nix ];
 
+  # On Ubuntu, GDM doesn't source shell profiles (~/.profile, /etc/profile.d/)
+  # when launching Wayland sessions, so ~/.nix-profile/bin isn't on PATH.
+  # systemd reads ~/.config/environment.d/*.conf for all user sessions — this
+  # makes noctalia, hooks, and all nix-installed binaries visible to Sway.
+  # Harmless on NixOS (paths are already on PATH there).
+  xdg.configFile."environment.d/nix.conf".text = ''
+    PATH=${config.home.homeDirectory}/.nix-profile/bin:/nix/var/nix/profiles/default/bin:''${PATH}
+    XDG_DATA_DIRS=${config.home.homeDirectory}/.nix-profile/share:''${XDG_DATA_DIRS}
+    XCURSOR_PATH=${config.home.homeDirectory}/.local/share/icons:''${XCURSOR_PATH}
+    XCURSOR_THEME=phinger-cursors-dark
+    XCURSOR_SIZE=24
+  '';
+
   home.username = "bob";
   home.homeDirectory = "/home/bob";
   home.stateVersion = "26.05";

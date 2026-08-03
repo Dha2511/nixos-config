@@ -1,4 +1,4 @@
-{ config, pkgs, noctalia-pkg, ... }:
+{ config, pkgs, lib, noctalia-pkg, isNixOS, ... }:
 
 let
   # Toggles the keyboard layout group (us <-> graphite) and pops a transient
@@ -19,6 +19,28 @@ let
       fi
     '';
   };
+
+  # On NixOS, the custom Graphite XKB layout is installed system-wide by the
+  # services.xserver.xkb module. On Ubuntu it doesn't exist — use plain US
+  # with altgr-intl (still gives Danish ae/oslash/aring via AltGr).
+  keyboardConfig = if isNixOS then ''
+    input type:keyboard {
+        xkb_layout "us,graphite"
+        xkb_variant "altgr-intl,"
+    }
+  '' else ''
+    input type:keyboard {
+        xkb_layout "us"
+        xkb_variant "altgr-intl"
+    }
+  '';
+
+  # kb-toggle only makes sense when graphite is available (NixOS only).
+  kbToggleBinding = lib.optionalString isNixOS ''
+        # Toggle keyboard layout: QWERTY <-> Graphite (both keep altgr-intl).
+        # slash sits on the same physical key in both layouts, so this is stable.
+        bindsym $mod+slash exec ${kb-toggle}/bin/kb-toggle
+  '';
 in {
   # Sway config, written to ~/.config/sway/config (portable across NixOS + Ubuntu).
   # Overrides NixOS's system-level /etc/sway/config and Ubuntu's /etc/sway/config.
@@ -103,10 +125,7 @@ in {
         tap enabled
     }
 
-    input type:keyboard {
-        xkb_layout "us,graphite"
-        xkb_variant "altgr-intl,"
-    }
+    ${keyboardConfig}
 
     ### Key bindings
     #
@@ -121,9 +140,7 @@ in {
         # Start your launcher
         bindsym $mod+d exec $menu
 
-        # Toggle keyboard layout: QWERTY <-> Graphite (both keep altgr-intl).
-        # slash sits on the same physical key in both layouts, so this is stable.
-        bindsym $mod+slash exec ${kb-toggle}/bin/kb-toggle
+    ${kbToggleBinding}
 
         # Drag floating windows by holding down $mod and left mouse button.
         # Resize them with right mouse button + $mod.

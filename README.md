@@ -57,6 +57,14 @@ Log out, pick **Sway** at the login screen gear icon.
 
 > **Note:** Nix packages are additive — they sit alongside system packages in
 > PATH. `apt`, `snap`, `pip`, etc. all continue to work normally. No isolation.
+>
+> **Podman:** The nix-installed podman may need `subuid`/`subgid` setup on
+> Ubuntu. For full container support, `sudo apt install podman` instead.
+>
+> **Graphite keyboard layout:** Only available on NixOS (installed via the XKB
+> module). On Ubuntu, the layout falls back to US + altgr-intl (Danish via
+> AltGr). To install manually, copy `xkb/graphite` to
+> `/usr/share/X11/xkb/symbols/` and register it in `/usr/share/X11/xkb/rules/evdev.xml`.
 
 Update later:
 
