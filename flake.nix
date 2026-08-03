@@ -1,5 +1,5 @@
 {
-  description = "Minimalist Performance NixOS";
+  description = "Portable NixOS / home-manager config";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -13,20 +13,39 @@
     };
   };
 
-  outputs = { self, nixpkgs, home-manager, ... }@inputs: {
-    nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+  outputs = { self, nixpkgs, home-manager, noctalia, ... }@inputs:
+    let
       system = "x86_64-linux";
-      specialArgs = { inherit inputs; };
-      modules = [
-        ./configuration.nix
-        home-manager.nixosModules.home-manager
-        {
-          home-manager.useGlobalPkgs = true;
-          home-manager.useUserPackages = true;
-          home-manager.extraSpecialArgs = { inherit inputs; };
-          home-manager.users.bob = import ./home.nix;
-        }
-      ];
+      noctalia-pkg = noctalia.packages.${system}.default;
+    in {
+      nixosConfigurations.nixos = nixpkgs.lib.nixosSystem {
+        inherit system;
+        specialArgs = { inherit inputs; };
+        modules = [
+          ./hosts/nixos/configuration.nix
+          home-manager.nixosModules.home-manager
+          {
+            home-manager.useGlobalPkgs = true;
+            home-manager.useUserPackages = true;
+            home-manager.extraSpecialArgs = {
+              inherit inputs noctalia-pkg;
+              isNixOS = true;
+            };
+            home-manager.users.bob = import ./home;
+          }
+        ];
+      };
+
+      homeConfigurations.bob = home-manager.lib.homeManagerConfiguration {
+        pkgs = nixpkgs.legacyPackages.${system};
+        extraSpecialArgs = {
+          inherit inputs noctalia-pkg;
+          isNixOS = false;
+        };
+        modules = [
+          { nixpkgs.config.allowUnfree = true; }
+          ./home
+        ];
+      };
     };
-  };
 }

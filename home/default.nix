@@ -1,4 +1,5 @@
-{ config, pkgs, inputs, ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, isNixOS, ... }:
+
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
   # (`theme_mode_changed`). It reads the resolved mode and points Sway's seat
@@ -34,165 +35,21 @@ let
     esac
   '';
 
-  # Union of host X11 shared libs that ComfyUI's bundled ANGLE (libGLESv2, used
-  # by comfy_extras/nodes_glsl.py) dlopen-depends on but that NixOS keeps off
-  # the default loader path. Collected into one /lib to keep the wrapper tidy.
-  comfyui-host-libs = pkgs.buildEnv {
-    name = "comfyui-host-libs";
-    paths = [ pkgs.libx11 pkgs.libxext pkgs.libxcb pkgs.libxau pkgs.libxdmcp pkgs.libglvnd pkgs.glib.out pkgs.zlib ];
-  };
-
-  # ComfyUI launcher for the hybrid Intel + RTX 3050 (RTD3) setup.
-  # Scopes NVIDIA PRIME offload to *this process only*: CUDA targets the dGPU
-  # while the rest of the session stays on Mesa (the global Intel-only
-  # Vulkan/EGL restriction in configuration.nix is left untouched). Launching
-  # wakes the dGPU (RTD3 exits); quitting drops the runtime-PM ref so the GPU
-  # re-suspends. The pip-installed PyTorch CUDA wheel bundles its own CUDA
-  # runtime but still needs several host libs that NixOS keeps off the default
-  # loader path, so we surface them all to both the nix-ld and regular linker
-  # search paths:
-  #   - libcuda.so.1 (driver, in /run/opengl-driver/lib)
-  #   - libstdc++.so.6 + libgcc_s.so.1 (gcc lib output)
-  #   - X11 libs libX11/libXext/libxcb/... (comfyui-host-libs) for the GLSL/ANGLE nodes
-  # TRITON_LIBCUDA_PATH makes the Triton JIT skip its hardcoded /sbin/ldconfig
-  # lookup (absent on NixOS) and go straight to libcuda. CC points the Triton
-  # JIT at a working C compiler (it compiles a small driver shim at runtime):
-  # NixOS has no `cc`/`gcc` on PATH, so we use the gcc-wrapper from stdenv,
-  # which carries its own glibc headers + binutils (also put on PATH for `as`/`ld`).
-  comfyui = pkgs.writeShellScriptBin "comfyui" ''
-    cd ~/comfy/ComfyUI 2>/dev/null || {
-      echo "ComfyUI workspace not found at ~/comfy/ComfyUI." >&2
-      echo "Run comfyui-bootstrap first." >&2
-      exit 1
-    }
-    export __NV_PRIME_RENDER_OFFLOAD=1
-    export __NV_PRIME_RENDER_OFFLOAD_PROVIDER=NVIDIA-G0
-    export __GLX_VENDOR_LIBRARY_NAME=nvidia
-    export __VK_LAYER_NV_optimus=NVIDIA_only
-    export LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib:${comfyui-host-libs}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    export NIX_LD_LIBRARY_PATH="/run/opengl-driver/lib:${pkgs.stdenv.cc.cc.lib}/lib:${comfyui-host-libs}/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
-    export TRITON_LIBCUDA_PATH="/run/opengl-driver/lib"
-    # Let the CUDA caching allocator satisfy a request from non-contiguous
-    # (physical) segments without splitting/compacting — shrinks fragmentation
-    # OOMs on the 4 GB dGPU (e.g. FILM VFI). No-op cost, helps borderline cases.
-    export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
-    # Depthflow (via shaderflow) forces an EGL backend by default (WINDOW_EGL=1),
-    # but Mesa EGL can't initialize headless here: it chases the NVIDIA DRM device
-    # through DRI2 and fails ("DRI2: failed to load driver" → eglInitialize 0x3001),
-    # since Mesa has no DRI driver for NVIDIA. Disabling the flag makes shaderflow
-    # pass backend=None, so moderngl falls back to its default GLX path on DISPLAY
-    # (works fine — GL 3.3 via NVIDIA GLX, which is what the nodes request).
-    export WINDOW_EGL=0
-    # Pin the system libglvnd GL/EGL dispatch lib as the canonical
-    # libGLdispatch.so.0 so bundled copies shipped inside some wheels (e.g.
-    # imgui_bundle.libs, pulled in by shaderflow) can't shadow it. Defensive
-    # hygiene for the GLX dispatch path moderngl now uses; harmless to cv2 and
-    # comfy_angle.
-    export LD_PRELOAD="${comfyui-host-libs}/lib/libGLdispatch.so.0''${LD_PRELOAD:+:$LD_PRELOAD}"
-    export CC="${pkgs.stdenv.cc}/bin/cc"
-    export PATH="${pkgs.stdenv.cc}/bin:$PATH"
-    # Self-heal the cupy dep GMFSS Fortuna VFI needs. find_spec only resolves
-    # the module spec (no CUDA import), so the check is instant; we install
-    # cupy-cuda13x (matching the cu130 PyTorch wheel) into the venv only if
-    # absent. A failure (e.g. offline) is non-fatal — non-GMFSS flows still run.
-    if ! .venv/bin/python -c "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec('cupy') else 1)" 2>/dev/null; then
-      echo "Installing cupy-cuda13x for GMFSS Fortuna VFI..." >&2
-      uv pip install --python "$HOME/comfy/ComfyUI/.venv/bin/python" cupy-cuda13x || true
-    fi
-    exec comfy launch "$@"
-  '';
-
-  # One-time provisioning of the comfy-cli-managed ComfyUI install (~/comfy/ComfyUI —
-  # comfy-cli's default workspace path; it picks this itself, so we cd there).
-  # Installs comfy-cli as a uv tool, then clones ComfyUI and builds a
-  # CUDA-capable Python venv (pick NVIDIA when prompted). Re-runnable. The
-  # install + models live outside the Nix store by design — ComfyUI releases
-  # weekly and models are tens of GB; only the launcher and .desktop are tracked.
-  comfyui-bootstrap = pkgs.writeShellScriptBin "comfyui-bootstrap" ''
-    set -e
-    mkdir -p ~/comfy/ComfyUI
-    uv tool install comfy-cli
-    cd ~/comfy/ComfyUI
-    comfy install
-    # GMFSS Fortuna VFI needs cupy; pin to the CUDA 13 build matching the cu130
-    # PyTorch wheel comfy-cli installs. Non-fatal: the comfyui launcher also
-    # re-checks on every launch and installs it if still missing.
-    uv pip install --python "$HOME/comfy/ComfyUI/.venv/bin/python" cupy-cuda13x \
-      || echo "cupy install deferred — the comfyui launcher will retry on next launch."
-    echo "Done. Launch with: comfyui  (models go in ~/comfy/ComfyUI/models; web UI at http://localhost:8188)"
-  '';
-
-  # Stirling-PDF desktop is a Tauri app whose frontend is rendered by
-  # WebKitGTK. Its DMA-buf renderer is buggy on this hybrid Intel/NVIDIA +
-  # Wayland setup: the UI redraws sluggishly under interaction, on both the
-  # iGPU and the dGPU (verified by running with WEBKIT_DISABLE_DMABUF_RENDERER=1
-  # on both paths). Disabling it makes the frontend responsive. We also pull in
-  # gst-plugins-base so WebKit stops warning about the missing `appsink`
-  # element (used by its HTML5 media pipeline).
-  stirling-pdf-wrapped = pkgs.symlinkJoin {
-    name = "stirling-pdf-wrapped";
-    paths = [ pkgs.stirling-pdf-desktop ];
-    nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
-    postBuild = ''
-      wrapProgram $out/bin/stirling-pdf \
-        --set WEBKIT_DISABLE_DMABUF_RENDERER 1 \
-        --prefix GST_PLUGIN_SYSTEM_PATH_1_0 : "${pkgs.gst_all_1.gst-plugins-base}/lib/gstreamer-1.0"
-    '';
-  };
-
-  # Prebuilt official Blender (bundles CUDA + OptiX runtime kernels), pinned to
-  # the SHA-256 blender.org publishes alongside the release:
-  #   https://download.blender.org/release/Blender5.2/blender-5.2.0.sha256
-  # Only the ELF interpreter is patchelf'd (NixOS has no system ld-linux) and the
-  # runtime system libs are surfaced via LD_LIBRARY_PATH — /run/opengl-driver/lib
-  # supplies libcuda.so.1, libGLdispatch, etc. for CUDA/OptiX + GL. Two .desktop
-  # entries (below) launch the SAME binary: one plain (Intel iGPU + CPU Cycles),
-  # one via `nvidia-offload` (viewport + Cycles CUDA/OptiX on the RTX 3050 dGPU,
-  # RTD3 re-suspends it on quit).
-  blender-bin =
-    let
-      version = "5.2.0";
-      runtimeDeps = with pkgs; [
-        wayland libdecor libxkbcommon libGLU libglvnd numactl SDL2 libdrm
-        ocl-icd stdenv.cc.cc.lib openal alsa-lib pulseaudio vulkan-loader zlib
-        libx11 libxi libxxf86vm libxfixes libxrender libsm libice
-      ];
-    in
-    pkgs.stdenv.mkDerivation {
-      pname = "blender-bin";
-      inherit version;
-      src = pkgs.fetchurl {
-        url = "https://download.blender.org/release/Blender5.2/blender-${version}-linux-x64.tar.xz";
-        sha256 = "96f6c181a30f4950607839dc84d42a354b250d8a0231b098b59b7bc69c351c48";
-      };
-      nativeBuildInputs = [ pkgs.makeWrapper pkgs.patchelf ];
-      dontUnpack = true;
-      installPhase = ''
-        runHook preInstall
-        mkdir -p $out/libexec
-        tar -xf $src -C $out/libexec
-        cd $out/libexec && mv blender-* blender
-        mkdir -p $out/bin $out/share/applications $out/share/icons/hicolor/scalable/apps
-        mv blender/blender.desktop $out/share/applications/
-        mv blender/blender.svg     $out/share/icons/hicolor/scalable/apps/ 2>/dev/null || true
-        patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/blender
-        patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/*/python/bin/python3* 2>/dev/null || true
-        makeWrapper $out/libexec/blender/blender $out/bin/blender \
-          --prefix LD_LIBRARY_PATH : /run/opengl-driver/lib:${pkgs.lib.makeLibraryPath runtimeDeps}
-        runHook postInstall
-      '';
-      meta.mainProgram = "blender";
-    };
+  # Scripts with isNixOS branching (NVIDIA lib paths, etc.)
+  scripts = import ./scripts.nix { inherit pkgs lib isNixOS; };
 in {
+  imports = [ ./sway.nix ];
+
   home.username = "bob";
   home.homeDirectory = "/home/bob";
+  home.stateVersion = "26.05";
 
   # Put uv-installed CLI tools (e.g. comfy-cli from comfyui-bootstrap) on PATH.
   home.sessionPath = [ "${config.home.homeDirectory}/.local/bin" ];
 
   # Cursor: phinger (dark baseline). GTK/env/legacy-xcursor are wired here; the
   # live compositor cursor is swapped by the `cursor-sync-theme` hook above and
-  # the `seat * xcursor_theme` line in the Sway config (configuration.nix).
+  # the `seat * xcursor_theme` line in the Sway config (home/sway.nix).
   home.pointerCursor = {
     package = pkgs.phinger-cursors;
     name = "phinger-cursors-dark";
@@ -331,7 +188,7 @@ in {
     pkgs.zed-editor
     pkgs.helix
     pkgs.vim
-    blender-bin
+    scripts.blender-bin
     pkgs.typst
     pkgs.bazecor
     pkgs.prusa-slicer
@@ -340,7 +197,7 @@ in {
     pkgs.davinci-resolve
     pkgs.obs-studio
     pkgs.loupe
-    stirling-pdf-wrapped
+    scripts.stirling-pdf-wrapped
     pkgs.zotero
     pkgs.anki
     pkgs.celluloid
@@ -378,6 +235,27 @@ in {
     pkgs.fd
     pkgs.yt-dlp
     pkgs.ffmpeg
+    pkgs.libnotify
+
+    # Fonts (also installed system-wide on NixOS via configuration.nix;
+    # duplicated here so Ubuntu gets them via the home profile)
+    pkgs.nerd-fonts.commit-mono
+    pkgs.nerd-fonts.departure-mono
+    pkgs.lexend
+    pkgs.noto-fonts
+    pkgs.noto-fonts-cjk-sans
+    pkgs.noto-fonts-color-emoji
+    pkgs.atkinson-hyperlegible-mono
+    pkgs.atkinson-hyperlegible-next
+    pkgs.hubot-sans
+    pkgs.mona-sans
+    pkgs.alegreya
+    pkgs.alegreya-sans
+    pkgs.fraunces
+    pkgs.recursive
+
+    # Noctalia (shell + panel + notification daemon)
+    noctalia-pkg
 
     # Drives the phinger light/dark cursor swap, the freedesktop color-scheme
     # (for Vivaldi/Chromium), and the in-process foot theme switch on toggle.
@@ -386,9 +264,23 @@ in {
     foot-sync-theme
 
     # ComfyUI launcher + one-time bootstrap (comfy-cli-managed install).
-    comfyui
-    comfyui-bootstrap
+    scripts.comfyui
+    scripts.comfyui-bootstrap
+  ] ++ lib.optionals (!isNixOS) [
+    # Ubuntu: simplified PRIME offload (NixOS has the full version in system packages)
+    scripts.nvidia-offload-ubuntu
   ];
+
+  # Enable fontconfig so home-profile fonts are visible to GUI apps.
+  fonts.fontconfig.enable = true;
+
+  # direnv — auto-loads devShells on `cd` into a flake repo.
+  # nix-direnv caches `nix develop` results so entry is instant after the first.
+  programs.direnv = {
+    enable = true;
+    enableZshIntegration = true;
+    nix-direnv.enable = true;
+  };
 
   programs.zsh = {
     enable = true;
@@ -504,6 +396,4 @@ in {
       };
     };
   };
-
-  home.stateVersion = "26.05";
 }

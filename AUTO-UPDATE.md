@@ -2,7 +2,7 @@
 
 > **Status: NOT YET APPLIED.** This documents the weekly auto-build + notify
 > automation we deliberately deferred. The GC + boot changes in
-> `configuration.nix` are already active; everything below is additive and can
+> `hosts/nixos/configuration.nix` are already active; everything below is additive and can
 > be added whenever you want it.
 
 ## When to apply this
@@ -33,7 +33,7 @@ which is exactly why this is safe alongside `boot.loader.timeout = 0`.
 
 ## How to apply
 
-Two edits to `home.nix`.
+Two edits to `home/default.nix`.
 
 ### 1. Add `libnotify` to `home.packages`
 
@@ -174,5 +174,5 @@ flake.lock that the next run sorts out. No corruption, no bricked boot.
 
 Delete the `systemd.user.services.nixos-autobuild` and
 `systemd.user.timers.nixos-autobuild` blocks and the `pkgs.libnotify` line from
-`home.nix`, then `nh os switch .`. The `~/.cache/nixos-autobuild.diff` log can
+`home/default.nix`, then `nh os switch .`. The `~/.cache/nixos-autobuild.diff` log can
 be deleted manually.
