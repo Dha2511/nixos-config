@@ -64,6 +64,7 @@ in {
   # Palettes are Kanagawa: Wave (dark) / Lotus (light), captured from Noctalia.
   xdg.configFile."foot/foot.ini".text = ''
     [main]
+    shell=zsh
     font = CommitMono Nerd Font Mono:size=14
 
     initial-color-theme=dark

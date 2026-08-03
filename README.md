@@ -47,9 +47,16 @@ nix run home-manager -- switch --flake .#bob
 
 # 5. Git auth (one-time)
 gh auth login
+
+# 6. Set zsh as login shell (foot already uses it via foot.ini, but this
+#    also covers SSH sessions and other terminals)
+chsh -s $(which zsh)
 ```
 
 Log out, pick **Sway** at the login screen gear icon.
+
+> **Note:** Nix packages are additive — they sit alongside system packages in
+> PATH. `apt`, `snap`, `pip`, etc. all continue to work normally. No isolation.
 
 Update later:
 
