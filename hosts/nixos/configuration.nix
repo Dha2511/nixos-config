@@ -57,6 +57,15 @@
   boot.consoleLogLevel = 3;
   boot.initrd.verbose = false;
 
+  # Cross-build foreign-arch closures transparently from this x86_64 box.
+  # Registers qemu-user via binfmt_misc so the kernel routes aarch64 ELF
+  # execution through emulation during `nix build`. Used to iterate on the
+  # M2 NixOS-in-UTM (aarch64-linux) config without leaving the desktop.
+  # Takes effect after `nh os switch .` + reboot (or `systemctl restart
+  # systemd-binfmt`). The M2 VM itself builds natively once booted, so this
+  # is only needed for cross-building from the desktop.
+  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
+
   networking.hostName = "nixos"; # Define your hostname.
   # networking.wireless.enable = true;  # Enables wireless support via wpa_supplicant.
 

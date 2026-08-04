@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, noctalia-pkg, isNixOS, ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, isNixOS, username, homeDirectory, isNvidia, hostName, ... }:
 
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
@@ -35,8 +35,20 @@ let
     esac
   '';
 
-  # Scripts with isNixOS branching (NVIDIA lib paths, etc.)
+  # Scripts with host-aware variants (NVIDIA vs portable ComfyUI; prebuilt
+  # x86_64 Blender vs stock pkgs.blender; Ubuntu-only PRIME offload wrapper).
+  # isNixOS is needed inside scripts.nix to pick the right NVIDIA lib path:
+  # /run/opengl-driver/lib on NixOS vs /usr/lib/x86_64-linux-gnu on Ubuntu.
+  # Getting this wrong produces "symbol lookup error" from prebuilt binaries.
   scripts = import ./scripts.nix { inherit pkgs lib isNixOS; };
+
+  # Per-host variant selection. NVIDIA hosts get the CUDA-pinned launchers;
+  # everyone else (M2 VM, future AMD/Intel-only machines) gets the portable
+  # versions. Both variants install a binary named `comfyui`, so desktop
+  # entries / muscle memory don't differ across hosts.
+  comfyuiScript = if isNvidia then scripts.comfyui else scripts.comfyui-portable;
+  blenderPackage = if isNvidia then scripts.blender-bin else pkgs.blender;
+  isx86_64 = pkgs.stdenv.hostPlatform.isx86_64;
 in {
   imports = [ ./sway.nix ];
 
@@ -53,8 +65,8 @@ in {
     XCURSOR_SIZE=24
   '';
 
-  home.username = "bob";
-  home.homeDirectory = "/home/bob";
+  home.username = username;
+  home.homeDirectory = homeDirectory;
   home.stateVersion = "26.05";
 
   # Put uv-installed CLI tools (e.g. comfy-cli from comfyui-bootstrap) on PATH.
@@ -159,26 +171,33 @@ in {
 
   # Launcher entry so ComfyUI appears in wmenu / the Noctalia launcher.
   # Runs in a foot window so server logs are visible; closing the window stops
-  # the server and lets the dGPU re-suspend (RTD3). The web UI is at
-  # http://localhost:8188 once it's up.
+  # the server (and on NVIDIA laptops, lets the dGPU re-suspend via RTD3).
+  # The `comfyui` binary dispatched here is the CUDA-pinned launcher on NVIDIA
+  # hosts and the portable CPU launcher on the M2 — same name, same entry.
+  # The web UI is at http://localhost:8188 once it's up.
   xdg.desktopEntries.comfyui = {
     name = "ComfyUI";
     genericName = "Diffusion Model Studio";
-    comment = "Node-based diffusion GUI (runs on the NVIDIA dGPU)";
+    comment = "Node-based diffusion GUI";
     exec = "foot -- comfyui";
     terminal = false;
     type = "Application";
     categories = [ "Graphics" "AudioVideo" ];
   };
 
-  # Two ways to launch the SAME Blender binary: plain (Intel iGPU + CPU Cycles,
-  # battery-friendly) and via `nvidia-offload` (viewport + Cycles CUDA/OptiX on
-  # the RTX 3050 dGPU; RTD3 re-suspends it on quit). The plain entry shadows the
-  # packaged blender.desktop and claims the .blend mimetype as the default.
+  # Two ways to launch the SAME Blender binary on NVIDIA laptops: plain
+  # (Intel iGPU + CPU Cycles, battery-friendly) and via `nvidia-offload`
+  # (viewport + Cycles CUDA/OptiX on the RTX dGPU; RTD3 re-suspends it on
+  # quit). The plain entry shadows the packaged blender.desktop and claims
+  # the .blend mimetype as the default. On the M2 VM (no NVIDIA, no Intel
+  # hybrid), only the plain entry exists — `blender-nvidia` is gated below.
   xdg.desktopEntries.blender = {
-    name = "Blender (Intel iGPU)";
+    name = "Blender";
     genericName = "3D Modeling Suite";
-    comment = "Viewport on Intel iGPU, Cycles on CPU (battery-friendly)";
+    comment = if isNvidia then
+      "Viewport on Intel iGPU, Cycles on CPU (battery-friendly)"
+    else
+      "CPU viewport + Cycles";
     exec = "blender %F";
     icon = "blender";
     terminal = false;
@@ -186,7 +205,11 @@ in {
     categories = [ "Graphics" "3DGraphics" ];
     mimeType = [ "application/x-blender" ];
   };
-  xdg.desktopEntries.blender-nvidia = {
+
+  # NVIDIA-only entry: PRIME-offloaded Blender (viewport + CUDA/OptiX on the
+  # dGPU). Gated by mkIf so the option is entirely absent on non-NVIDIA hosts
+  # (e.g. the M2 VM) — no broken .desktop symlink in ~/.local/share/applications.
+  xdg.desktopEntries.blender-nvidia = lib.mkIf isNvidia {
     name = "Blender (NVIDIA GPU)";
     genericName = "3D Modeling Suite";
     comment = "Viewport + Cycles CUDA/OptiX on the RTX 3050 dGPU";
@@ -197,18 +220,38 @@ in {
     categories = [ "Graphics" "3DGraphics" ];
   };
 
+  # Local llama.cpp inference server (loopback only). Auto-starts at login;
+  # exits cleanly (no spin) if no model is present at the default path, so
+  # it's safe to ship enabled everywhere. Override per-host with environment
+  # directives (e.g. `systemctl --user edit llama` to set LLAMA_MODEL/PORT).
+  # Strongly bound to 127.0.0.1 — never exposes inference to the LAN, which
+  # matters on work machines connected to untrusted networks (corp Wi-Fi,
+  # VPN, eduroam, conference nets).
+  systemd.user.services.llama = {
+    Unit = {
+      Description = "Local llama.cpp inference server (loopback only)";
+      Documentation = "https://github.com/ggerganov/llama.cpp/tree/master/tools/server";
+    };
+    Service = {
+      ExecStart = "${scripts.llama-serve}/bin/llama-serve";
+      Restart = "on-failure";
+      RestartSec = 10;
+    };
+    Install = {
+      WantedBy = [ "default.target" ];
+    };
+  };
+
   home.packages = [
     # GUI
     pkgs.zed-editor
     pkgs.helix
     pkgs.vim
-    scripts.blender-bin
+    blenderPackage
     pkgs.typst
-    pkgs.bazecor
     pkgs.prusa-slicer
 
     # Multimedia / apps
-    pkgs.davinci-resolve
     pkgs.obs-studio
     pkgs.loupe
     scripts.stirling-pdf-wrapped
@@ -233,7 +276,6 @@ in {
     pkgs.surfraw
     pkgs.ddgr
     pkgs.w3m
-    pkgs.vivaldi
 
     # Utilities
     pkgs.aria2
@@ -278,11 +320,26 @@ in {
     foot-sync-theme
 
     # ComfyUI launcher + one-time bootstrap (comfy-cli-managed install).
-    scripts.comfyui
+    # NVIDIA hosts pull the CUDA variant automatically via comfyuiScript.
+    comfyuiScript
     scripts.comfyui-bootstrap
-  ] ++ lib.optionals (!isNixOS) [
-    # Ubuntu: simplified PRIME offload (NixOS has the full version in system packages)
+
+    # Local LLM inference (llama.cpp). Provides `llama-cli`, `llama-server`,
+    # etc. directly; the auto-starting user service is wired above. CPU
+    # build — works on every host including the M2 VM. NVIDIA hosts that
+    # want CUDA inference can override via an overlay later.
+    pkgs.llama-cpp
+  ] ++ lib.optionals (isNvidia && !isNixOS) [
+    # Ubuntu + NVIDIA: simplified PRIME offload (NixOS has the full version
+    # in system packages). On the M2 VM (no NVIDIA) there's nothing to offload.
     scripts.nvidia-offload-ubuntu
+  ] ++ lib.optionals isx86_64 [
+    # x86_64-only. Upstream doesn't ship aarch64 binaries for these.
+    # bazecor (Dygma keyboard configurator), davinci-resolve (Blackmagic),
+    # vivaldi (proprietary Chromium fork). The M2 VM skips all three.
+    pkgs.bazecor
+    pkgs.davinci-resolve
+    pkgs.vivaldi
   ];
 
   # Enable fontconfig so home-profile fonts are visible to GUI apps.
