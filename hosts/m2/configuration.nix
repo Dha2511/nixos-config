@@ -151,13 +151,16 @@
   programs.nix-ld.enable = true;
 
   # dconf + XDG portal — same rationale as the desktop (Noctalia's
-  # color-scheme-sync hook writes here, Chromium reads it).
+  # color-scheme-sync hook writes here, Chromium reads it). wlr is the
+  # wlroots backend that lets the portal detect the Sway session and drive
+  # FileChooser (file pickers) + ScreenCast; without it the gtk portal
+  # alone never fully activates on Sway.
   programs.dconf.enable = true;
   xdg.portal = {
     enable = true;
     xdgOpenUsePortal = false;
-    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
-    config.common.default = [ "gtk" ];
+    extraPortals = [ pkgs.xdg-desktop-portal-gtk pkgs.xdg-desktop-portal-wlr ];
+    config.common.default = [ "gtk" "wlr" ];
   };
 
   # Nix settings — match the desktop.

@@ -307,14 +307,17 @@
   # the active light/dark mode.
   programs.dconf.enable = true;
 
-  # Bridge the dconf color-scheme to the freedesktop portal interface that
-  # Chromium-based apps (Vivaldi) query for prefers-color-scheme. Without this
-  # the gtk backend never runs, so Vivaldi can't see the value dconf holds.
+  # XDG desktop portal. The gtk backend provides FileChooser (file picker
+  # dialogs in browsers/editors), AppChooser, etc.; xdg-desktop-portal-wlr is
+  # the wlroots backend that lets the portal detect the Sway session at all
+  # and supplies ScreenCast (screen share in Discord/Slack/OBS/browsers) +
+  # Screenshot. Without wlr the portal never fully comes up on Sway, so the
+  # gtk FileChooser never fires — which is why file pickers did nothing.
   xdg.portal = {
     enable = true;
     xdgOpenUsePortal = false;              # keep Vivaldi's own link handling
-    extraPortals = [ pkgs.xdg-desktop-portal-gtk ];
-    config.common.default = [ "gtk" ];
+    extraPortals = [ pkgs.xdg-desktop-portal-gtk pkgs.xdg-desktop-portal-wlr ];
+    config.common.default = [ "gtk" "wlr" ];
   };
 
   # Nix Settings
