@@ -68,6 +68,17 @@ in {
     # Your preferred application launcher
     set $menu wmenu-run
 
+    # Publish Wayland/XDG env to the systemd user manager AND the D-Bus
+    # activation environment. Portal backends (xdg-desktop-portal-gtk /
+    # -wlr) are D-Bus/systemd-activated, so they start with the user
+    # manager's environment — which has no WAYLAND_DISPLAY unless we export
+    # it here. Without this they can't reach the compositor: the gtk backend
+    # fails with "startup job failed" and wlr is skipped on its
+    # ConditionEnvironment=WAYLAND_DISPLAY check, so file pickers / screen
+    # share silently never open. Portable across NixOS and Ubuntu.
+    exec systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP DISPLAY XDG_SESSION_TYPE
+    exec dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
+
     ### Output configuration
     #
     # Noctalia manages the wallpaper (persisted, via `noctalia msg wallpaper-set`);
