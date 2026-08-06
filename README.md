@@ -74,8 +74,23 @@ curl -fsSL https://install.determinate.systems/nix | sh -s -- install
 # 2. Install sway + deps that must come from the system package manager
 sudo apt install sway wmenu foot wl-clipboard grim jq libnotify dconf-cli
 
-# 3. (Optional) NVIDIA driver for CUDA / ComfyUI
+# 3. (NVIDIA only) Driver + a Sway session entry that passes --unsupported-gpu.
+#    ubuntu-drivers autoinstall also drops libnvidia-gl-* (libEGL_nvidia.so.0
+#    in /usr/lib/x86_64-linux-gnu), which the nix GUI bridge in
+#    home/default.nix depends on — without it nix-built apps (noctalia, obs,
+#    zed, etc.) fail with "eglGetDisplay failed".
 sudo ubuntu-drivers autoinstall && sudo reboot
+# After reboot — register a NVIDIA Sway entry in the GDM gear menu. A separate
+# .desktop (rather than editing stock sway.desktop) survives apt upgrades of
+# the sway package, and keeps the plain-Sway option for non-NVIDIA boxes.
+sudo tee /usr/share/wayland-sessions/sway-nvidia.desktop >/dev/null <<'EOF'
+[Desktop Entry]
+Name=Sway (NVIDIA)
+Comment=Sway with --unsupported-gpu for NVIDIA proprietary
+Exec=sway --unsupported-gpu
+Type=Application
+DesktopNames=Sway
+EOF
 
 # 4. Clone and apply (NOTE: output name matches your username — `owner` here)
 git clone https://github.com/Dha2511/nixos-config.git ~/nixos-config
@@ -90,7 +105,8 @@ gh auth login
 chsh -s $(which zsh)
 ```
 
-Log out, pick **Sway** at the login screen gear icon.
+Log out, pick **Sway (NVIDIA)** at the login screen gear icon (or plain
+**Sway** on non-NVIDIA boxes).
 
 > **Note:** Nix packages are additive — they sit alongside system packages in
 > PATH. `apt`, `snap`, `pip`, etc. all continue to work normally. No isolation.

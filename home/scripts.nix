@@ -114,8 +114,17 @@ let
         mv blender/blender.svg     $out/share/icons/hicolor/scalable/apps/ 2>/dev/null || true
         patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/blender
         patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/*/python/bin/python3* 2>/dev/null || true
+        # Blender's lib/ MUST come first in LD_LIBRARY_PATH: libembree4.so.4
+        # (NEEDED on libtbb.so.12) is resolved via the loader search path, not
+        # via libembree4's own RUNPATH (DT_RUNPATH isn't transitive). On Ubuntu
+        # nvidiaLibs is /usr/lib/x86_64-linux-gnu, which ships an OLDER libtbb
+        # than Blender bundles — if that won the lookup, libembree4 died with
+        # "undefined symbol: _ZN3tbb6detail2r127get_thread_reference_vertex...".
+        # Putting $out/libexec/blender/lib first makes the bundled, matching
+        # libtbb win on every host. Harmless on NixOS (/run/opengl-driver/lib
+        # has no libtbb anyway).
         makeWrapper $out/libexec/blender/blender $out/bin/blender \
-          --prefix LD_LIBRARY_PATH : ${nvidiaLibs}:${pkgs.lib.makeLibraryPath runtimeDeps}
+          --prefix LD_LIBRARY_PATH : $out/libexec/blender/lib:${nvidiaLibs}:${pkgs.lib.makeLibraryPath runtimeDeps}
         runHook postInstall
       '';
       meta.mainProgram = "blender";

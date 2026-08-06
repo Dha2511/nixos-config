@@ -63,6 +63,22 @@ in {
     XCURSOR_PATH=${config.home.homeDirectory}/.local/share/icons:''${XCURSOR_PATH}
     XCURSOR_THEME=phinger-cursors-dark
     XCURSOR_SIZE=24
+  ''
+  # Ubuntu-only GL/EGL bridge. Nix-built GUI apps link against nix-store GLVND
+  # (libEGL.so.1 / libGL.so.1 from Mesa), which is just a vendor dispatcher —
+  # the actual implementation (libEGL_nvidia.so.0, the GL vendor) lives in
+  # Ubuntu's multiarch dir. GLVND finds the vendor JSON fine (via /usr/share on
+  # XDG_DATA_DIRS) but its dlopen("libEGL_nvidia.so.0") then fails because that
+  # path isn't in the loader search for a nix binary (nix-store RPATH only) →
+  # "fatal: eglGetDisplay failed" from noctalia and any other nix GUI app.
+  # Putting /usr/lib/x86_64-linux-gnu on LD_LIBRARY_PATH makes GLVND's dlopen
+  # succeed. Wrapped apps (Blender, ComfyUI) set their OWN LD_LIBRARY_PATH and
+  # override this, so no regression there. Requires libnvidia-gl-* (from
+  # ubuntu-drivers autoinstall) to actually provide libEGL_nvidia.so.0.
+  # No-op on NixOS (empty string appended).
+  + lib.optionalString (!isNixOS) ''
+    LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:''${LD_LIBRARY_PATH}
+    __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json
   '';
 
   home.username = username;
