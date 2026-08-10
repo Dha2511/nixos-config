@@ -324,6 +324,8 @@
   nix.settings = {
     experimental-features = [ "nix-command" "flakes" ];
     auto-optimise-store = true;  # hardlink-dedup on every build
+    extra-substituters = [ "https://noctalia.cachix.org" ];
+    extra-trusted-public-keys = [ "noctalia.cachix.org-1:pCOR47nnME05thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=" ];
   };
 
   # Weekly GC: drop generations older than 14 days, then collect garbage.

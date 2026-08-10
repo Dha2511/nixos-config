@@ -270,7 +270,7 @@ in {
     # Multimedia / apps
     pkgs.obs-studio
     pkgs.loupe
-    scripts.stirling-pdf-wrapped
+    # scripts.stirling-pdf-wrapped
     pkgs.zotero
     pkgs.anki
     pkgs.celluloid
