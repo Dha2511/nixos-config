@@ -35,21 +35,13 @@ which is exactly why this is safe alongside `boot.loader.timeout = 0`.
 
 Two edits to `home/default.nix`.
 
-### 1. Add `libnotify` to `home.packages`
+### 1. `libnotify` — already installed
 
 `notify-send` (from libnotify) sends the notification; **Noctalia renders it**
 (Noctalia owns the `org.freedesktop.Notifications` D-Bus name). Do **NOT** add
-`mako`/`dunst` — they would collide with Noctalia.
-
-Add `pkgs.libnotify;` somewhere in the `home.packages = [ ... ];` list, e.g.
-under the Utilities group:
-
-```nix
-    pkgs.fd
-    pkgs.yt-dlp
-    pkgs.ffmpeg
-    pkgs.libnotify   # ← add: provides notify-send (Noctalia renders the popup)
-```
+`mako`/`dunst` — they would collide with Noctalia. `pkgs.libnotify` is already
+in the `home.packages` list in `home/default.nix` (Utilities group), so this
+step is done — skip to step 2.
 
 ### 2. Add the service + timer
 

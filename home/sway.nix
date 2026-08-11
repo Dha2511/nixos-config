@@ -1,4 +1,4 @@
-{ config, pkgs, lib, noctalia-pkg, isNixOS, ... }:
+{ config, pkgs, lib, noctalia-pkg, ... }:
 
 let
   # Toggles the keyboard layout group (us <-> graphite) and pops a transient
@@ -20,31 +20,18 @@ let
     '';
   };
 
-  # On NixOS, the custom Graphite XKB layout is installed system-wide by the
-  # services.xserver.xkb module. On Ubuntu it doesn't exist — use plain US
-  # with altgr-intl (still gives Danish ae/oslash/aring via AltGr).
-  keyboardConfig = if isNixOS then ''
+  # The custom Graphite XKB layout is installed system-wide by the
+  # services.xserver.xkb module in hosts/_common/default.nix (every host is
+  # NixOS). US + altgr-intl stays group 0; Graphite is group 1.
+  keyboardConfig = ''
     input type:keyboard {
         xkb_layout "us,graphite"
         xkb_variant "altgr-intl,"
     }
-  '' else ''
-    input type:keyboard {
-        xkb_layout "us"
-        xkb_variant "altgr-intl"
-    }
-  '';
-
-  # kb-toggle only makes sense when graphite is available (NixOS only).
-  kbToggleBinding = lib.optionalString isNixOS ''
-        # Toggle keyboard layout: QWERTY <-> Graphite (both keep altgr-intl).
-        # slash sits on the same physical key in both layouts, so this is stable.
-        bindsym $mod+slash exec ${kb-toggle}/bin/kb-toggle
   '';
 in {
-  # Sway config, written to ~/.config/sway/config (portable across NixOS + Ubuntu).
-  # Overrides NixOS's system-level /etc/sway/config and Ubuntu's /etc/sway/config.
-  # Ships the upstream default verbatim but:
+  # Sway config, written to ~/.config/sway/config. Overrides NixOS's
+  # system-level /etc/sway/config. Ships the upstream default verbatim but:
   #   1. drops the `bar { }` block so Noctalia is the only bar, and
   #   2. sets a minimal neutral window-border palette (Noctalia no longer themes Sway).
   xdg.configFile."sway/config".text = ''
@@ -75,7 +62,7 @@ in {
     # it here. Without this they can't reach the compositor: the gtk backend
     # fails with "startup job failed" and wlr is skipped on its
     # ConditionEnvironment=WAYLAND_DISPLAY check, so file pickers / screen
-    # share silently never open. Portable across NixOS and Ubuntu.
+    # share silently never open.
     exec systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP DISPLAY XDG_SESSION_TYPE
     exec dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
 
@@ -151,7 +138,9 @@ in {
         # Start your launcher
         bindsym $mod+d exec $menu
 
-    ${kbToggleBinding}
+        # Toggle keyboard layout: QWERTY <-> Graphite (both keep altgr-intl).
+        # slash sits on the same physical key in both layouts, so this is stable.
+        bindsym $mod+slash exec ${kb-toggle}/bin/kb-toggle
 
         # Drag floating windows by holding down $mod and left mouse button.
         # Resize them with right mouse button + $mod.

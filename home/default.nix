@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, noctalia-pkg, isNixOS, username, homeDirectory, isNvidia, hostName, ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, username, homeDirectory, isNvidia, hostName, ... }:
 
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
@@ -36,11 +36,9 @@ let
   '';
 
   # Scripts with host-aware variants (NVIDIA vs portable ComfyUI; prebuilt
-  # x86_64 Blender vs stock pkgs.blender; Ubuntu-only PRIME offload wrapper).
-  # isNixOS is needed inside scripts.nix to pick the right NVIDIA lib path:
-  # /run/opengl-driver/lib on NixOS vs /usr/lib/x86_64-linux-gnu on Ubuntu.
-  # Getting this wrong produces "symbol lookup error" from prebuilt binaries.
-  scripts = import ./scripts.nix { inherit pkgs lib isNixOS; };
+  # x86_64 Blender vs stock pkgs.blender). All hosts are NixOS now, so the
+  # NVIDIA lib path in scripts.nix is unconditionally /run/opengl-driver/lib.
+  scripts = import ./scripts.nix { inherit pkgs lib; };
 
   # Per-host variant selection. NVIDIA hosts get the CUDA-pinned launchers;
   # everyone else (M2 VM, future AMD/Intel-only machines) gets the portable
@@ -49,37 +47,17 @@ let
   comfyuiScript = if isNvidia then scripts.comfyui else scripts.comfyui-portable;
   blenderPackage = if isNvidia then scripts.blender-bin else pkgs.blender;
   isx86_64 = pkgs.stdenv.hostPlatform.isx86_64;
+
+  # stirling-pdf-desktop (Tauri + Java) has had recurring upstream build
+  # breakage ("Cannot wrap .../bin/stirling-pdf because it does not exist" =
+  # the underlying Tauri build failed, not our wrapper). It's also x86_64-only
+  # material (heavy, no aarch64 value on the M2). Flip this to true on x86_64
+  # hosts once you've confirmed `nix build nixpkgs#stirling-pdf-desktop` works
+  # on the current nixpkgs revision; leaving it false keeps a broken upstream
+  # package from blocking every host's rebuild.
+  stirlingEnabled = false;
 in {
   imports = [ ./sway.nix ];
-
-  # On Ubuntu, GDM doesn't source shell profiles (~/.profile, /etc/profile.d/)
-  # when launching Wayland sessions, so ~/.nix-profile/bin isn't on PATH.
-  # systemd reads ~/.config/environment.d/*.conf for all user sessions — this
-  # makes noctalia, hooks, and all nix-installed binaries visible to Sway.
-  # Harmless on NixOS (paths are already on PATH there).
-  xdg.configFile."environment.d/nix.conf".text = ''
-    PATH=${config.home.homeDirectory}/.nix-profile/bin:/nix/var/nix/profiles/default/bin:''${PATH}
-    XDG_DATA_DIRS=${config.home.homeDirectory}/.nix-profile/share:''${XDG_DATA_DIRS}
-    XCURSOR_PATH=${config.home.homeDirectory}/.local/share/icons:''${XCURSOR_PATH}
-    XCURSOR_THEME=phinger-cursors-dark
-    XCURSOR_SIZE=24
-  ''
-  # Ubuntu-only GL/EGL bridge. Nix-built GUI apps link against nix-store GLVND
-  # (libEGL.so.1 / libGL.so.1 from Mesa), which is just a vendor dispatcher —
-  # the actual implementation (libEGL_nvidia.so.0, the GL vendor) lives in
-  # Ubuntu's multiarch dir. GLVND finds the vendor JSON fine (via /usr/share on
-  # XDG_DATA_DIRS) but its dlopen("libEGL_nvidia.so.0") then fails because that
-  # path isn't in the loader search for a nix binary (nix-store RPATH only) →
-  # "fatal: eglGetDisplay failed" from noctalia and any other nix GUI app.
-  # Putting /usr/lib/x86_64-linux-gnu on LD_LIBRARY_PATH makes GLVND's dlopen
-  # succeed. Wrapped apps (Blender, ComfyUI) set their OWN LD_LIBRARY_PATH and
-  # override this, so no regression there. Requires libnvidia-gl-* (from
-  # ubuntu-drivers autoinstall) to actually provide libEGL_nvidia.so.0.
-  # No-op on NixOS (empty string appended).
-  + lib.optionalString (!isNixOS) ''
-    LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:''${LD_LIBRARY_PATH}
-    __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/10_nvidia.json
-  '';
 
   home.username = username;
   home.homeDirectory = homeDirectory;
@@ -88,10 +66,14 @@ in {
   # Put uv-installed CLI tools (e.g. comfy-cli from comfyui-bootstrap) on PATH.
   home.sessionPath = [ "${config.home.homeDirectory}/.local/bin" ];
 
-  # Cursor: phinger (dark baseline). GTK/env/legacy-xcursor are wired here; the
-  # live compositor cursor is swapped by the `cursor-sync-theme` hook above and
-  # the `seat * xcursor_theme` line in the Sway config (home/sway.nix).
+  # Cursor: phinger (dark baseline). `enable = true` is REQUIRED by current
+  # home-manager — merely defining name/package/size no longer implicitly
+  # enables cursor generation (it prints a deprecation warning otherwise).
+  # gtk.enable sets gtk.cursorTheme from these values; the live compositor
+  # cursor is swapped by the `cursor-sync-theme` hook + the `seat *
+  # xcursor_theme` line in the Sway config (home/sway.nix).
   home.pointerCursor = {
+    enable = true;
     package = pkgs.phinger-cursors;
     name = "phinger-cursors-dark";
     size = 24;
@@ -270,7 +252,6 @@ in {
     # Multimedia / apps
     pkgs.obs-studio
     pkgs.loupe
-    # scripts.stirling-pdf-wrapped
     pkgs.zotero
     pkgs.anki
     pkgs.celluloid
@@ -283,7 +264,6 @@ in {
     pkgs.python3
     pkgs.git
     pkgs.gh
-    pkgs.gitbutler
     pkgs.podman
     pkgs.opencode
     pkgs.starship
@@ -309,8 +289,8 @@ in {
     pkgs.ffmpeg
     pkgs.libnotify
 
-    # Fonts (also installed system-wide on NixOS via configuration.nix;
-    # duplicated here so Ubuntu gets them via the home profile)
+    # Fonts (also installed system-wide via hosts/_common/default.nix; mirrored
+    # here so user-session apps pick them up before login completes)
     pkgs.nerd-fonts.commit-mono
     pkgs.nerd-fonts.departure-mono
     pkgs.lexend
@@ -345,10 +325,12 @@ in {
     # build — works on every host including the M2 VM. NVIDIA hosts that
     # want CUDA inference can override via an overlay later.
     pkgs.llama-cpp
-  ] ++ lib.optionals (isNvidia && !isNixOS) [
-    # Ubuntu + NVIDIA: simplified PRIME offload (NixOS has the full version
-    # in system packages). On the M2 VM (no NVIDIA) there's nothing to offload.
-    scripts.nvidia-offload-ubuntu
+  ] ++ lib.optionals (isx86_64 && stirlingEnabled) [
+    # stirling-pdf-desktop (Tauri + Java). Gated by `stirlingEnabled` in the
+    # let-block above because upstream builds have been intermittently broken;
+    # also x86_64-only (no point on the aarch64 M2). The wrapper lives in
+    # scripts.nix#stirling-pdf-wrapped.
+    scripts.stirling-pdf-wrapped
   ] ++ lib.optionals isx86_64 [
     # x86_64-only. Upstream doesn't ship aarch64 binaries for these.
     # bazecor (Dygma keyboard configurator), davinci-resolve (Blackmagic),

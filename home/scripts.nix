@@ -1,14 +1,10 @@
-{ pkgs, lib, isNixOS }:
+{ pkgs, lib }:
 
 let
-  # Where libcuda.so.1 and the NVIDIA GL dispatch libs live. On NixOS it's
-  # the opengl-driver symlink tree; on Ubuntu it's the multiarch directory
-  # where the `nvidia-driver` package drops libGL / libcuda / libnvidia-*
-  # symlinks. Pointing LD_LIBRARY_PATH at the wrong one here is what
-  # produces the "symbol lookup error" / "cannot open shared object" noise
-  # from prebuilt binaries like Blender — keep this conditional.
-  # Unused on non-NVIDIA hosts (M2 VM) — see comfyui-portable below.
-  nvidiaLibs = if isNixOS then "/run/opengl-driver/lib" else "/usr/lib/x86_64-linux-gnu";
+  # Where libcuda.so.1 and the NVIDIA GL dispatch libs live on NixOS: the
+  # opengl-driver symlink tree. Unused on non-NVIDIA hosts (M2 VM) — see
+  # comfyui-portable below.
+  nvidiaLibs = "/run/opengl-driver/lib";
 
   comfyui-host-libs = pkgs.buildEnv {
     name = "comfyui-host-libs";
@@ -17,8 +13,8 @@ let
 
   # NVIDIA-only ComfyUI launcher. Pins the dGPU via PRIME offload, preloads
   # the GL dispatch libs ComfyUI's bundled python expects, and ensures
-  # cupy-cuda13x is present (required by GMFSS Fortuna VFI). Use this on the
-  # desktop (RTX 3050) and the work Ubuntu (RTX 4090).
+  # cupy-cuda13x is present (required by GMFSS Fortuna VFI). Used on the two
+  # NVIDIA hosts: the laptop (RTX 3050 hybrid) and the desk VM (passthrough).
   comfyui = pkgs.writeShellScriptBin "comfyui" ''
     cd ~/comfy/ComfyUI 2>/dev/null || {
       echo "ComfyUI workspace not found at ~/comfy/ComfyUI." >&2
@@ -116,30 +112,16 @@ let
         patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/*/python/bin/python3* 2>/dev/null || true
         # Blender's lib/ MUST come first in LD_LIBRARY_PATH: libembree4.so.4
         # (NEEDED on libtbb.so.12) is resolved via the loader search path, not
-        # via libembree4's own RUNPATH (DT_RUNPATH isn't transitive). On Ubuntu
-        # nvidiaLibs is /usr/lib/x86_64-linux-gnu, which ships an OLDER libtbb
-        # than Blender bundles — if that won the lookup, libembree4 died with
-        # "undefined symbol: _ZN3tbb6detail2r127get_thread_reference_vertex...".
-        # Putting $out/libexec/blender/lib first makes the bundled, matching
-        # libtbb win on every host. Harmless on NixOS (/run/opengl-driver/lib
-        # has no libtbb anyway).
+        # via libembree4's own RUNPATH (DT_RUNPATH isn't transitive).
+        # nvidiaLibs (/run/opengl-driver/lib) has no libtbb anyway, but putting
+        # $out/libexec/blender/lib first guarantees the bundled, matching libtbb
+        # wins for any future lib on that path.
         makeWrapper $out/libexec/blender/blender $out/bin/blender \
           --prefix LD_LIBRARY_PATH : $out/libexec/blender/lib:${nvidiaLibs}:${pkgs.lib.makeLibraryPath runtimeDeps}
         runHook postInstall
       '';
       meta.mainProgram = "blender";
     };
-
-  # Ubuntu + NVIDIA only: simplified PRIME offload (no VK_ICD override
-  # needed — Ubuntu doesn't pin the loader the way the NixOS desktop does).
-  # On NixOS the full wrapper lives in hosts/nixos/configuration.nix (it
-  # needs config.hardware.nvidia.package which is only available in the
-  # NixOS eval). On the M2 (no NVIDIA) there's nothing to offload to.
-  nvidia-offload-ubuntu = pkgs.writeShellScriptBin "nvidia-offload" ''
-    export __NV_PRIME_RENDER_OFFLOAD=1
-    export __GLX_VENDOR_LIBRARY_NAME=nvidia
-    exec "$@"
-  '';
 
   # llama.cpp launcher (used by the systemd user service below). Loopback
   # only — never exposes inference to the LAN (work machines on untrusted
@@ -163,5 +145,5 @@ let
       "$@"
   '';
 in {
-  inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin nvidia-offload-ubuntu llama-serve;
+  inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin llama-serve;
 }
