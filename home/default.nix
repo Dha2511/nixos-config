@@ -56,6 +56,14 @@ let
   # on the current nixpkgs revision; leaving it false keeps a broken upstream
   # package from blocking every host's rebuild.
   stirlingEnabled = false;
+
+  # Noctalia wallpaper, declaratively shipped from the repo (home/assets/cube.png)
+  # to a stable managed path. The merged config.toml block below points Noctalia
+  # at this exact file, so the wallpaper is reproducible across hosts/rebuilds
+  # with no manual copy. `${wallpaperPath}` is interpolated into that block.
+  wallpaper = ./assets/cube.png;
+  wallpaperDir = "${homeDirectory}/.local/share/wallpapers";
+  wallpaperPath = "${wallpaperDir}/cube.png";
 in {
   imports = [ ./sway.nix ];
 
@@ -146,9 +154,14 @@ in {
     theme = "noctalia"
   '';
 
-  # Noctalia: swap the phinger cursor variant to match the active light/dark
-  # mode. A partial user config deep-merges with Noctalia's built-in defaults
-  # (verify with `noctalia config validate`).
+  # Noctalia config — FULLY DECLARATIVE. This block is the single source of
+  # truth: it deep-merges with Noctalia's built-in defaults, and the former
+  # GUI-managed override layer (~/.local/state/noctalia/settings.toml) is now
+  # pinned to an empty read-only file (see home.file below) so the Settings UI
+  # can no longer shadow anything here. Verify with `noctalia config validate`.
+  # The keys below the `--- migrated ---` marker were lifted verbatim from that
+  # settings.toml; the three wallpaper `path` keys were rewritten to point at
+  # the repo-managed wallpaper (see `wallpaperPath` in the let-block).
   xdg.configFile."noctalia/config.toml".text = ''
     [hooks]
     started = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
@@ -156,16 +169,218 @@ in {
 
     # Keep Noctalia's builtin foot template OFF so it doesn't rewrite
     # ~/.config/foot/foot.ini (it injected `include=.../themes/noctalia` and
-    # recreated foot.ini as a regular file, clobbering home-manager's symlink and
-    # aborting every `nh os switch`). home-manager owns foot.ini; live light/dark
-    # switching still works via the foot-sync-theme SIGUSR1/2 hook. Only `helix`
-    # stays Noctalia-managed (helix can't hot-reload themes).
-    # CAVEAT: Noctalia layers ~/.local/state/noctalia/settings.toml (GUI-managed)
-    # ABOVE this file, so if the Settings UI ever re-enables foot it wins — keep
-    # the foot template off there too (or `rm settings.toml` to clear overrides).
+    # recreated foot.ini as a regular file, clobbering home-manager's symlink
+    # and aborting every `nh os switch`). home-manager owns foot.ini; live
+    # light/dark switching still works via the foot-sync-theme SIGUSR1/2 hook.
+    # Only `helix` stays Noctalia-managed (helix can't hot-reload themes).
     [theme.templates]
     builtin_ids = [ "helix" ]
+
+    # ---- migrated from ~/.local/state/noctalia/settings.toml ---------------
+
+    [bar.default]
+    center = [ "clock", "spacer_2", "date", "spacer_2", "weather" ]
+    end = [
+        "media",
+        "notifications",
+        "clipboard",
+        "network",
+        "bluetooth",
+        "volume",
+        "brightness",
+        "spacer_2",
+        "session",
+        "battery"
+    ]
+    margin_edge = 0
+    margin_ends = 0
+    position = "bottom"
+    radius = 0
+    shadow = false
+    start = [ "workspaces", "screenshot" ]
+
+    [battery]
+    warning_threshold = 20
+
+    [calendar]
+    enabled = true
+
+        [calendar.account.personal_google]
+        name = "Personal"
+        type = "google"
+
+    [dock]
+    auto_hide = true
+    icon_size = 24
+    shadow = false
+    show_dots = true
+
+    [idle]
+    behavior_order = [ "lock", "screen-off", "lock-and-suspend" ]
+
+        [idle.behavior.lock]
+        action = "lock"
+        enabled = false
+        timeout = 600.0
+
+        [idle.behavior.lock-and-suspend]
+        action = "lock_and_suspend"
+        enabled = false
+        timeout = 900.0
+
+        [idle.behavior.screen-off]
+        action = "screen_off"
+        enabled = true
+        timeout = 600.0
+
+    [location]
+    auto_locate = true
+
+    [lockscreen_widgets]
+    enabled = false
+    schema_version = 2
+    widget_order = [ "lockscreen-login-box@eDP-1" ]
+
+        [lockscreen_widgets.grid]
+        cell_size = 16
+        major_interval = 4
+        visible = true
+
+        [lockscreen_widgets.widget."lockscreen-login-box@eDP-1"]
+        box_height = 70.0
+        box_width = 400.0
+        cx = 960.0
+        cy = 961.0
+        output = "eDP-1"
+        rotation = 0.0
+        type = "login_box"
+
+            [lockscreen_widgets.widget."lockscreen-login-box@eDP-1".settings]
+            background_color = "surface_variant"
+            background_opacity = 0.88
+            background_radius = 12.0
+            input_opacity = 1.0
+            input_radius = 6.0
+            show_caps_lock = true
+            show_keyboard_layout = true
+            show_login_button = true
+            show_password_hint = true
+
+    [nightlight]
+    enabled = true
+    temperature_night = 4700
+
+    [shell]
+    corner_radius_scale = 0.0
+    font_family = "CommitMono Nerd Font Mono"
+    ui_scale = 1.1000000089406967
+
+        [shell.animation]
+        enabled = false
+
+        [shell.panel]
+        control_center_position = "center"
+        shadow = false
+
+        [[shell.session.actions]]
+        action = "shutdown"
+        countdown_seconds = 0.0
+        enabled = true
+        shortcut = "1"
+        variant = "destructive"
+
+        [[shell.session.actions]]
+        action = "lock"
+        countdown_seconds = 0.0
+        enabled = true
+        shortcut = "2"
+        variant = "primary"
+
+        [[shell.session.actions]]
+        action = "logout"
+        countdown_seconds = 0.0
+        enabled = true
+        shortcut = "3"
+        variant = "secondary"
+
+        [[shell.session.actions]]
+        action = "lock_and_suspend"
+        countdown_seconds = 0.0
+        enabled = true
+        shortcut = "4"
+        variant = "default"
+
+        [[shell.session.actions]]
+        action = "reboot"
+        countdown_seconds = 0.0
+        enabled = true
+        shortcut = "5"
+        variant = "outline"
+
+        [shell.shadow]
+        alpha = 0.0
+
+    [theme]
+    builtin = "Kanagawa"
+    community_palette = "Oxocarbon"
+    mode = "dark"
+    source = "builtin"
+    wallpaper_scheme = "m3-content"
+
+    [wallpaper]
+    directory = "${wallpaperDir}"
+    transition = [ "zoom" ]
+
+        [wallpaper.default]
+        path = "${wallpaperPath}"
+
+        [wallpaper.last]
+        path = "${wallpaperPath}"
+
+        [wallpaper.monitors.eDP-1]
+        path = "${wallpaperPath}"
+
+    [weather]
+    refresh_minutes = 60
+
+    [widget.date]
+    format = "{:%d %a}"
+
+    [widget.media]
+    hide_when_no_media = true
+
+    [widget.screenshot]
+    capsule = true
+
+    [widget.session]
+    capsule = true
+
+    [widget.spacer_2]
+    length = 35
+    type = "spacer"
+
+    [widget.tray]
+    enabled = true
+
+    [widget.weather]
+    show_condition = false
   '';
+
+  # Ship the declarative wallpaper to the stable path config.toml references
+  # above. Managed as a read-only symlink into the nix store.
+  home.file.".local/share/wallpapers/cube.png".source = wallpaper;
+
+  # LOCK: neutralise the GUI-managed override layer. Noctalia layers
+  # ~/.local/state/noctalia/settings.toml ABOVE config.toml, so any value the
+  # Settings UI writes there would silently win. We pin it to an empty nix-store
+  # file (read-only symlink): empty = no overrides = config.toml is the sole
+  # source of truth, and the GUI's writes to this path now fail (toggles no-op).
+  # Acceptance: after `nh os switch .`, run `noctalia config validate` and toggle
+  # something in Settings to confirm it degrades gracefully (no shell crash). If
+  # Noctalia ever rename-replaces the symlink, it regains control until the next
+  # rebuild — re-run `nh os switch .` to restore the lock. First switch requires
+  # `rm ~/.local/state/noctalia/settings.toml` (home-manager won't clobber it).
+  home.file.".local/state/noctalia/settings.toml".text = "";
 
   # Launcher entry so ComfyUI appears in wmenu / the Noctalia launcher.
   # Runs in a foot window so server logs are visible; closing the window stops

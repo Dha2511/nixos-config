@@ -39,10 +39,13 @@ nixos-config/
 │       └── hardware-configuration.nix
 ├── home/                      # shared home-manager module (all three hosts)
 │   ├── default.nix            # packages, zsh, starship, cursor, fonts,
-│   │                          # direnv, llama.cpp service, desktop entries
+│   │                          # direnv, llama.cpp service, desktop entries,
+│   │                          # declarative Noctalia config.toml + settings lock
 │   ├── sway.nix               # Sway config + Noctalia keybinds
-│   └── scripts.nix            # ComfyUI (NVIDIA + portable), Blender prebuilt,
-│                              # llama-serve launcher
+│   ├── scripts.nix            # ComfyUI (NVIDIA + portable), Blender prebuilt,
+│   │                          # llama-serve launcher
+│   └── assets/cube.png        # declarative Noctalia wallpaper → ~/.local/share/
+│                              # wallpapers/cube.png (referenced by config.toml)
 └── xkb/graphite               # custom Graphite keyboard layout
 ```
 
@@ -331,6 +334,40 @@ If noctalia ever *silently* fails to substitute again, double-check that key
 character-by-character against
 https://app.cachix.org/api/v1/cache/noctalia — a single wrong character
 silently invalidates every noctalia path.
+
+### Config, wallpaper & the GUI lock (declarative)
+
+Noctalia's configuration is **fully declarative** — there is no GUI-tunable
+state. The setup in `home/default.nix`:
+
+- **`~/.config/noctalia/config.toml`** (managed via `xdg.configFile`) is the
+  single source of truth. It deep-merges over Noctalia's built-in defaults and
+  holds *everything*: hooks, theme (Kanagawa / Oxocarbon / dark), bar layout,
+  dock, idle, nightlight, calendar account, shell/ui_scale, and the wallpaper
+  paths. Verify it parses with `noctalia config validate`.
+- **`~/.local/state/noctalia/settings.toml`** — Noctalia's GUI-managed
+  *override* layer, which normally sits above `config.toml` and wins on
+  conflict — is pinned to an **empty read-only nix-store file** (managed via
+  `home.file`). Empty = no overrides, so `config.toml` always governs.
+- **Wallpaper** ships from `home/assets/cube.png` to the stable path
+  `~/.local/share/wallpapers/cube.png` (`home.file`); `config.toml` points
+  Noctalia at that path.
+
+**Consequence:** the Settings UI can no longer persist changes. Toggling
+anything in it surfaces "failed to save settings" and no-ops (this is the
+intended behaviour, not an error). To change the theme, wallpaper, bar, or any
+other setting, edit the `config.toml` block in `home/default.nix` and rebuild
+(`nh os switch .`).
+
+Two caveats worth remembering:
+
+- Noctalia's state directory (`~/.local/state/noctalia/`) is **not** managed —
+  clipboard, calendar OAuth tokens, recently-used, etc. stay user-writable.
+  Only `settings.toml` is locked.
+- If Noctalia ever replaces the locked `settings.toml` symlink via a
+  rename-on-write, it would regain GUI control until the next `nh os switch .`
+  restores the lock. Re-run the switch if the GUI ever starts accepting
+  changes again.
 
 ## What's included
 
