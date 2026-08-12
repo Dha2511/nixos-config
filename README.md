@@ -299,7 +299,17 @@ extra-substituters        = https://noctalia.cachix.org
 extra-trusted-public-keys = noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=
 ```
 
-If noctalia ever starts compiling from source again, double-check that key
+**Status (2026-08): the cache is currently empty.** No narinfo is served for
+any of the branch's revs — the upstream CI workflow claims it pushes them, but
+they all 404. On top of that, noctalia's pinned nixpkgs ships a **0-byte**
+`wireplumber-0.5.pc`, which breaks the meson configure step
+(`Dependency "wireplumber-0.5" not found, tried pkgconfig`). Until upstream
+fixes both, noctalia always compiles from source; `flake.nix`'s `wireplumberFix`
+overrides the package's `wireplumber` callPackage arg with our nixpkgs' copy
+(which has a valid `.pc`) so the build succeeds. A from-source build is
+therefore **expected**, not a sign of a misconfigured key.
+
+If noctalia ever *silently* fails to substitute again, double-check that key
 character-by-character against
 https://app.cachix.org/api/v1/cache/noctalia — a single wrong character
 silently invalidates every noctalia path.

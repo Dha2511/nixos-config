@@ -14,6 +14,14 @@
     # against — so the cache keys match and binaries download instead of
     # compiling from source (the wireplumber-0.5 build failure). The cache +
     # public key themselves are wired in hosts/_common/default.nix.
+    #
+    # NOTE: two problems currently force a from-source build anyway:
+    #   1. noctalia.cachix.org serves no narinfo for any of the branch's revs
+    #      (the CI workflow claims it pushed them, but they 404).
+    #   2. noctalia's pinned nixpkgs (f13ff45) ships a 0-byte
+    #      wireplumber-0.5.pc, so the meson check "Dependency wireplumber-0.5
+    #      not found" fails at configure time. `wireplumberFix` below swaps in
+    #      our nixpkgs' wireplumber (which has a valid .pc), fixing the build.
     noctalia.url = "github:noctalia-dev/noctalia/cachix";
   };
 
@@ -27,6 +35,14 @@
       # NOTE: isNvidia is a real per-host flag — do NOT derive it from
       # stdenv.hostPlatform.isx86_64. x86_64 ≠ NVIDIA (Intel/AMD-only x86
       # boxes and the aarch64 M2 VM all have isNvidia = false).
+      # Workaround for noctalia's pinned nixpkgs shipping a 0-byte
+      # wireplumber-0.5.pc (see input comment above). Overriding the package's
+      # `wireplumber` callPackage arg with our nixpkgs' copy yields a valid
+      # wireplumber-0.5.pc (our nixpkgs lock, 279b4a8, has a 449-byte one).
+      wireplumberFix = system:
+        noctalia.packages.${system}.default.override {
+          wireplumber = nixpkgs.legacyPackages.${system}.wireplumber;
+        };
       mkNixos =
         { system
         , hostName
@@ -46,7 +62,7 @@
               home-manager.useUserPackages = true;
               home-manager.extraSpecialArgs = {
                 inherit inputs username homeDirectory isNvidia hostName;
-                noctalia-pkg = noctalia.packages.${system}.default;
+                noctalia-pkg = wireplumberFix system;
               };
               home-manager.users.${username} = import ./home;
             }

@@ -121,11 +121,16 @@
     algorithm = "zstd";
   };
 
-  # Common Nix settings. The noctalia substituter MUST use the public key
-  # published by the noctalia cachix (https://app.cachix.org/api/v1/cache/noctalia)
-  # — a single wrong character here silently invalidates every noctalia path
-  # signature and forces a from-source rebuild (the "noctalia won't use the
-  # cache" failure mode).
+  # Common Nix settings. The noctalia substituter public key MUST match the one
+  # published by the noctalia cachix
+  # (https://app.cachix.org/api/v1/cache/noctalia) — a single wrong character
+  # silently invalidates every noctalia path signature.
+  #
+  # NOTE: the cache currently serves no binaries (every pushed path 404s), and
+  # noctalia's pinned nixpkgs ships a 0-byte wireplumber-0.5.pc. noctalia
+  # therefore compiles from source on every machine; flake.nix's
+  # `wireplumberFix` swaps in our nixpkgs' wireplumber so that build succeeds.
+  # A from-source build is expected, not a sign of a key typo.
   nix.settings = {
     experimental-features = [ "nix-command" "flakes" ];
     auto-optimise-store = true; # hardlink-dedup on every build
