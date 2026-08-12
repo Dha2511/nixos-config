@@ -46,6 +46,24 @@ nixos-config/
 └── xkb/graphite               # custom Graphite keyboard layout
 ```
 
+## Hardware configs
+
+Each `hosts/<name>/configuration.nix` imports its sibling
+`hardware-configuration.nix`, and `flake.nix`'s `mkNixos` loads
+`hosts/${hostName}/configuration.nix`. So the full chain is:
+**flake → `configuration.nix` → sibling `hardware-configuration.nix`**.
+That sibling is the only hardware-specific file per host — regenerating it with
+`nixos-generate-config` and overwriting the committed copy is the complete
+wiring (no other edits needed).
+
+Current state of the committed configs:
+
+- `nixos/` and `desk/` — **real** generated `hardware-configuration.nix`
+  (UUIDs + detected initrd modules from those machines).
+- `m2/` — a **template** using `by-partlabel` that matches the partition layout
+  in the M2 install steps, so a fresh UTM install boots first-try. Regenerate
+  and replace it after a real M2 install (exact kernel-module matching).
+
 ## Per-host flags (in `flake.nix`)
 
 `mkNixos` threads these into the home module via `extraSpecialArgs`:
@@ -228,11 +246,12 @@ mkdir -p /mnt/boot && mount /dev/disk/by-partlabel/ESP /mnt/boot
 nixos-install --flake .#desk --root /mnt
 ```
 
-After first boot, regenerate the hardware config inside the guest for exact
-kernel-module matching, then replace `hosts/desk/hardware-configuration.nix`:
+`hosts/desk/hardware-configuration.nix` is already the real generated file
+(UUIDs + detected modules). If you reinstall the VM, regenerate it after first
+boot for exact kernel-module matching:
 
 ```sh
-nixos-generate-config --dir /tmp/desk-config   # copy its hardware-configuration.nix over the template
+nixos-generate-config --dir /tmp/desk-config   # copy its hardware-configuration.nix over the committed one
 ```
 
 ### Verify the GPU inside the guest
