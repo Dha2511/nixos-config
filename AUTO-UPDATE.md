@@ -1,9 +1,10 @@
 # Auto-update (deferred)
 
 > **Status: NOT YET APPLIED.** This documents the weekly auto-build + notify
-> automation we deliberately deferred. The GC + boot changes in
-> `hosts/nixos/configuration.nix` are already active; everything below is additive and can
-> be added whenever you want it.
+> automation we deliberately deferred. The GC + nix.settings in
+> `hosts/_common/default.nix` and the per-host boot config in each
+> `hosts/<name>/configuration.nix` are already active; everything below is additive
+> and can be added whenever you want it.
 
 ## When to apply this
 
@@ -71,7 +72,7 @@ near the end, before `home.stateVersion`):
         echo "=== nix flake update ===" >> "$diff"
         nix flake update >> "$diff" 2>&1 || net_ok=0
         echo "=== nixos-rebuild build ===" >> "$diff"
-        nixos-rebuild build --flake .#nixos >> "$diff" 2>&1
+        nixos-rebuild build --flake .#$(hostname) >> "$diff" 2>&1
         build_rc=$?
         echo "=== diff-closures (current -> built) ===" >> "$diff"
         nix store diff-closures /run/current-system result >> "$diff" 2>&1

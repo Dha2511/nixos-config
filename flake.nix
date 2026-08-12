@@ -7,13 +7,12 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Noctalia pinned to its `cachix` branch and NOT following our nixpkgs.
-    # The cachix branch only ever points at commits already built & pushed to
-    # the noctalia binary cache (https://noctalia.cachix.org), and the absence
-    # of `follows` means noctalia evaluates against the nixpkgs it was built
-    # against — so the cache keys match and binaries download instead of
-    # compiling from source (the wireplumber-0.5 build failure). The cache +
-    # public key themselves are wired in hosts/_common/default.nix.
+    # Noctalia pinned to its `cachix` branch with `inputs.nixpkgs.follows`
+    # removed. Not following our nixpkgs lets noctalia evaluate against the
+    # nixpkgs it was built against, so cache signatures *would* match and
+    # binaries *could* download from noctalia.cachix.org (URL + key wired in
+    # hosts/_common/default.nix). That's the intent — see the NOTE below for
+    # why it currently still builds from source.
     #
     # NOTE: two problems currently force a from-source build anyway:
     #   1. noctalia.cachix.org serves no narinfo for any of the branch's revs

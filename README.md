@@ -287,12 +287,11 @@ hosts that want CUDA inference can override `pkgs.llama-cpp` via an overlay.
 ## Noctalia (desktop shell)
 
 Noctalia is pinned to its **`cachix`** branch with `inputs.nixpkgs.follows`
-**removed**. This is required for the binary cache to work: the `cachix` branch
-only points at commits already built and pushed to `noctalia.cachix.org`, and
-not following our nixpkgs means noctalia evaluates against the nixpkgs it was
-built against — so signatures match and binaries download instead of compiling
-from source (the `wireplumber-0.5` build failure). The cache URL + public key
-are wired in `hosts/_common/default.nix`:
+**removed**. Not following our nixpkgs lets noctalia evaluate against the
+nixpkgs it was built against, so cache signatures *would* match and binaries
+*could* download from `noctalia.cachix.org` instead of compiling from source.
+That's the intent; the cache URL + public key are wired in
+`hosts/_common/default.nix`:
 
 ```
 extra-substituters        = https://noctalia.cachix.org
