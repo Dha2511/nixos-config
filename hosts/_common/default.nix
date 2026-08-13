@@ -114,6 +114,11 @@
   # nix-ld: lets prebuilt binaries downloaded by uv/pip/etc. run.
   programs.nix-ld.enable = true;
 
+  # System-wide tooling. Hosts layer their own dev-tool baselines on top.
+  environment.systemPackages = with pkgs; [
+    usbutils # lsusb — list USB devices / decode bus+device info
+  ];
+
   # zram (zstd) — cheap RAM-backed swap, useful on every host (especially the
   # RAM-constrained VMs).
   zramSwap = {
