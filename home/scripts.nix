@@ -1,4 +1,4 @@
-{ pkgs, lib }:
+{ pkgs, lib, isNvidia }:
 
 let
   # Where libcuda.so.1 and the NVIDIA GL dispatch libs live on NixOS: the
@@ -123,27 +123,85 @@ let
       meta.mainProgram = "blender";
     };
 
-  # llama.cpp launcher (used by the systemd user service below). Loopback
-  # only — never exposes inference to the LAN (work machines on untrusted
-  # networks). If no model is present, exits 0 so systemd doesn't spin on
-  # Restart=on-failure. Override the model with $LLAMA_MODEL, port with
-  # $LLAMA_PORT, and pass extra llama-server flags after `--`.
-  #
-  # GGUFs don't belong in the flake (per-arch quants, 0.5–8 GB each, can't
-  # be rebuilt from source). Drop one at the default path or set LLAMA_MODEL.
-  llama-serve = pkgs.writeShellScriptBin "llama-serve" ''
-    model="''${LLAMA_MODEL:-$HOME/.local/share/models/default.gguf}"
-    if [ ! -f "$model" ]; then
-      echo "llama-serve: no model at $model — staying down." >&2
-      echo "Drop a GGUF there, or set LLAMA_MODEL, then: systemctl --user restart llama" >&2
-      exit 0
+  # Unsloth Studio env. Sources from the launcher wrappers to give the
+  # installer's bundled python the libs it needs. On NVIDIA hosts it also puts
+  # the driver libs (/run/opengl-driver/lib) on the loader path so torch can
+  # dlopen libcuda.so.1 — without this a CUDA torch still reports "no GPU".
+  # (Sourced as `source <...>/bin/unsloth-env`, so it's a plain env script,
+  # not meant to be run standalone.)
+  unsloth-env = pkgs.writeShellScriptBin "unsloth-env" ''
+    export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-bundle.crt}"
+    export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-$SSL_CERT_FILE}"
+    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.openssl.out}/lib:${pkgs.zlib}/lib${lib.optionalString isNvidia ":${nvidiaLibs}"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export NIX_LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.openssl.out}/lib:${pkgs.zlib}/lib${lib.optionalString isNvidia ":${nvidiaLibs}"}''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
+  '';
+
+  # One-time Unsloth Studio installer. Runs unsloth's own install.sh (into
+  # ~/.unsloth/studio, symlinked as ~/.local/bin/unsloth). On NVIDIA hosts it
+  # then swaps the CPU torch install.sh drops in for the CUDA build matching
+  # the driver (cu130) — a CPU torch shows up as "CPU training backend (no
+  # GPU)" even with a working NVIDIA driver — and ensures the bundled
+  # llama.cpp is the CUDA build so GGUF inference also lands on the GPU.
+  # Re-running updates all three steps. Web UI at http://127.0.0.1:8888 once
+  # launched.
+  unsloth-bootstrap = pkgs.writeShellScriptBin "unsloth-bootstrap" ''
+    set -e
+    source ${unsloth-env}/bin/unsloth-env
+    if [ -x "$HOME/.local/bin/unsloth" ]; then
+      echo "Unsloth Studio is already installed — re-running to update it." >&2
     fi
-    exec ${pkgs.llama-cpp}/bin/llama-server \
-      --host 127.0.0.1 \
-      --port "''${LLAMA_PORT:-8080}" \
-      --model "$model" \
-      "$@"
+    curl -fsSL https://unsloth.ai/install.sh | UNSLOTH_SKIP_AUTOSTART=1 sh
+    ${lib.optionalString isNvidia ''
+    # Swap CPU torch (installed by install.sh) for the CUDA build matching the
+    # NVIDIA driver. Only torch needs the swap — the cu130 index has no
+    # torchvision/torchaudio for the 2.10 line, and their CPU builds pair fine
+    # with it. Pin +cu130 so pip replaces +cpu rather than treating them as
+    # the same version.
+    ${pkgs.uv}/bin/uv pip install --python "$HOME/.unsloth/studio/unsloth_studio/bin/python" \
+      --index-url https://download.pytorch.org/whl/cu130 \
+      torch==2.10.0+cu130
+
+    # Ensure the bundled llama.cpp is the CUDA build. The studio's installer
+    # auto-routes by torch.cuda.is_available(), but only for a fresh install —
+    # an existing CPU bundle (e.g. installed before the cu130 torch swap) is
+    # kept as-is and would keep serving GGUF on the CPU. Reinstall via the
+    # studio's own installer when the marker does not already show a CUDA
+    # bundle. unsloth-env (sourced above) provides the SSL cert and
+    # libstdc++/libssl LD_LIBRARY_PATH entries the installer's preflight needs
+    # on NixOS.
+    PY="$HOME/.unsloth/studio/unsloth_studio/bin/python"
+    PROFILE="$($PY -c 'import json, os; p = os.path.expanduser("~/.unsloth/llama.cpp/UNSLOTH_PREBUILT_INFO.json"); print(json.load(open(p))["bundle_profile"])' 2>/dev/null || echo none)"
+    case "$PROFILE" in
+      cuda*) echo "llama.cpp CUDA bundle present ($PROFILE)." >&2 ;;
+      *)
+        INSTALLER="$($PY -c 'import studio.install_llama_prebuilt as m; print(m.__file__)' 2>/dev/null || true)"
+        if [ -n "$INSTALLER" ]; then
+          echo "Installing llama.cpp CUDA bundle (current: $PROFILE)..." >&2
+          "$PY" "$INSTALLER" --install-dir "$HOME/.unsloth/llama.cpp" \
+            --llama-tag latest --published-repo unslothai/llama.cpp || \
+            echo "warning: llama.cpp CUDA install failed; Studio will retry on first model load." >&2
+        else
+          echo "warning: could not locate the llama.cpp installer; Studio will install on first model load." >&2
+        fi
+        ;;
+    esac
+    ''}
+    echo "Done. Launch with: unsloth-studio  (web UI at http://127.0.0.1:8888)"
+  '';
+
+  # Unsloth Studio launcher. Loopback only — never exposes the server to the
+  # LAN. Sources unsloth-env (NVIDIA libs on GPU hosts) and execs the
+  # installer's CLI; the desktop entry dispatches here so launcher launches
+  # get the GPU env too. Override flags can be appended after `--`.
+  unsloth-studio = pkgs.writeShellScriptBin "unsloth-studio" ''
+    if [ ! -x "$HOME/.local/bin/unsloth" ]; then
+      echo "Unsloth Studio is not installed yet." >&2
+      echo "Run unsloth-bootstrap first, then relaunch." >&2
+      exit 1
+    fi
+    source ${unsloth-env}/bin/unsloth-env
+    exec "$HOME/.local/bin/unsloth" studio -H 127.0.0.1 -p 8888 "$@"
   '';
 in {
-  inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin llama-serve;
+  inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin unsloth-env unsloth-bootstrap unsloth-studio;
 }

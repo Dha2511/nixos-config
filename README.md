@@ -39,11 +39,11 @@ nixos-config/
 │       └── hardware-configuration.nix
 ├── home/                      # shared home-manager module (all three hosts)
 │   ├── default.nix            # packages, zsh, starship, cursor, fonts,
-│   │                          # direnv, llama.cpp service, desktop entries,
+│   │                          # direnv, Unsloth Studio, desktop entries,
 │   │                          # declarative Noctalia config.toml + settings lock
 │   ├── sway.nix               # Sway config + Noctalia keybinds
 │   ├── scripts.nix            # ComfyUI (NVIDIA + portable), Blender prebuilt,
-│   │                          # llama-serve launcher
+│   │                          # Unsloth Studio env/bootstrap/launcher
 │   └── assets/cube.png        # declarative Noctalia wallpaper → ~/.local/share/
 │                              # wallpapers/cube.png (referenced by config.toml)
 └── xkb/graphite               # custom Graphite keyboard layout
@@ -267,44 +267,33 @@ nvidia-smi                  # driver loaded + CUDA ready?
 If `nvidia-smi` is empty, the host-side vfio bind almost certainly didn't take
 (check `dmesg | grep -i vfio` on the host). The NixOS side needs no change.
 
-## Local LLM inference (llama.cpp)
+## Local LLM (Unsloth Studio)
 
-Every host ships `pkgs.llama-cpp` and a user-level systemd service
-(`llama.service`) that auto-starts at login. It's **loopback-only** — never
-exposes inference to the LAN (matters on corp / VPN / conference networks).
+Local inference + fine-tuning runs through **Unsloth Studio**, installed
+imperatively into `~/.unsloth` (a per-user venv, CLI symlinked as
+`~/.local/bin/unsloth`) — it can't be rebuilt from Nix source. Three flake
+pieces make that install reproducible:
 
-Models aren't in the flake (per-arch quants, multi-GB, can't be rebuilt from
-source). Convention:
+- **`unsloth-bootstrap`** — one-time installer. Runs unsloth's `install.sh`,
+  then on **NVIDIA hosts** swaps the CPU torch that drops in for the CUDA
+  build matching the driver (`torch==2.10.0+cu130`) and ensures the bundled
+  llama.cpp is the CUDA prebuilt — so both fine-tuning *and* GGUF inference
+  land on the GPU. Non-NVIDIA hosts skip these and keep the stock CPU install.
+  Re-run anytime to update.
+- **`unsloth-studio`** — launcher. Sources `unsloth-env` and starts the web UI
+  at **http://127.0.0.1:8888**, **loopback-only** (never exposed to the LAN).
+  A desktop entry (`foot -- unsloth-studio`) dispatches here.
+- **`unsloth-env`** — environment source. Sets `SSL_CERT_FILE` (the venv
+  Python otherwise loads no CA certs and every GitHub fetch fails TLS) and an
+  `LD_LIBRARY_PATH` with the gcc/openssl/zlib + NVIDIA driver libs that the
+  installer's binary preflight and llama-server both need on NixOS.
 
-```sh
-mkdir -p ~/.local/share/models
-# Drop any GGUF you want as the default at:
-#   ~/.local/share/models/default.gguf
-# Then enable the service:
-systemctl --user enable --now llama
-```
-
-If no model is present the service exits cleanly (no restart loop). Probe the
-API once it's up:
-
-```sh
-curl http://127.0.0.1:8080/v1/chat/completions -d '{
-  "model": "default",
-  "messages": [{"role":"user","content":"hello"}]
-}'
-```
-
-Override the model or port per-host with a drop-in:
-
-```sh
-systemctl --user edit llama
-# [Service]
-# Environment="LLAMA_MODEL=/data/models/qwen2.5-coder-7b.Q4_K_M.gguf"
-# Environment="LLAMA_PORT=8081"
-```
-
-The CPU build ships by default — fine on every host including the M2. NVIDIA
-hosts that want CUDA inference can override `pkgs.llama-cpp` via an overlay.
+GGUF models (e.g. `unsloth/Muse-Glimmer-30B-GGUF`) are served through the
+bundled `llama-server` — the **CUDA** build on NVIDIA hosts (`llama-server
+--list-devices` should enumerate the GPU). The studio only auto-routes the
+llama.cpp backend on a *fresh* install, so `unsloth-bootstrap` also checks the
+`~/.unsloth/llama.cpp/UNSLOTH_PREBUILT_INFO.json` marker and reinstalls the
+CUDA bundle if a stale CPU one is present.
 
 ## Noctalia (desktop shell)
 
@@ -378,5 +367,5 @@ Two caveats worth remembering:
 - **Dev**: cargo, uv, python3, gh, git, podman, direnv, opencode
 - **Media**: blender (prebuilt CUDA on NVIDIA, stock nixpkgs elsewhere), davinci-resolve (x86_64 only), obs-studio
 - **Diffusion**: ComfyUI via comfy-cli (CUDA launcher on NVIDIA, portable CPU launcher on M2)
-- **Local LLM**: llama.cpp (loopback-only, auto-starts when a model is dropped in)
+- **Local LLM**: Unsloth Studio (loopback-only, GGUF inference + no-code fine-tuning)
 - **Tools**: ripgrep, fd, fzf, tmux, yt-dlp, ffmpeg, aria2, timg, and more

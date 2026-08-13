@@ -38,7 +38,7 @@ let
   # Scripts with host-aware variants (NVIDIA vs portable ComfyUI; prebuilt
   # x86_64 Blender vs stock pkgs.blender). All hosts are NixOS now, so the
   # NVIDIA lib path in scripts.nix is unconditionally /run/opengl-driver/lib.
-  scripts = import ./scripts.nix { inherit pkgs lib; };
+  scripts = import ./scripts.nix { inherit pkgs lib isNvidia; };
 
   # Per-host variant selection. NVIDIA hosts get the CUDA-pinned launchers;
   # everyone else (M2 VM, future AMD/Intel-only machines) gets the portable
@@ -433,26 +433,19 @@ in {
     categories = [ "Graphics" "3DGraphics" ];
   };
 
-  # Local llama.cpp inference server (loopback only). Auto-starts at login;
-  # exits cleanly (no spin) if no model is present at the default path, so
-  # it's safe to ship enabled everywhere. Override per-host with environment
-  # directives (e.g. `systemctl --user edit llama` to set LLAMA_MODEL/PORT).
-  # Strongly bound to 127.0.0.1 — never exposes inference to the LAN, which
-  # matters on work machines connected to untrusted networks (corp Wi-Fi,
-  # VPN, eduroam, conference nets).
-  systemd.user.services.llama = {
-    Unit = {
-      Description = "Local llama.cpp inference server (loopback only)";
-      Documentation = "https://github.com/ggerganov/llama.cpp/tree/master/tools/server";
-    };
-    Service = {
-      ExecStart = "${scripts.llama-serve}/bin/llama-serve";
-      Restart = "on-failure";
-      RestartSec = 10;
-    };
-    Install = {
-      WantedBy = [ "default.target" ];
-    };
+  # Unsloth Studio launcher. Runs in a foot window so server logs are visible.
+  # Dispatches to the `unsloth-studio` wrapper (sources unsloth-env, so NVIDIA
+  # hosts get the driver libs torch needs) rather than the raw installer
+  # binary — launching the installer's own entry bypasses that env and shows
+  # "CPU training backend" on a GPU host.
+  xdg.desktopEntries.unsloth-studio = {
+    name = "Unsloth Studio";
+    genericName = "LLM Training Studio";
+    comment = "No-code local LLM fine-tuning GUI";
+    exec = "foot -- unsloth-studio";
+    terminal = false;
+    type = "Application";
+    categories = [ "Development" "Education" ];
   };
 
   home.packages = [
@@ -535,11 +528,12 @@ in {
     comfyuiScript
     scripts.comfyui-bootstrap
 
-    # Local LLM inference (llama.cpp). Provides `llama-cli`, `llama-server`,
-    # etc. directly; the auto-starting user service is wired above. CPU
-    # build — works on every host including the M2 VM. NVIDIA hosts that
-    # want CUDA inference can override via an overlay later.
-    pkgs.llama-cpp
+    # Unsloth Studio — local LLM fine-tuning + GGUF inference. The bootstrap
+    # script runs unsloth's installer and (on NVIDIA hosts) swaps its CPU
+    # torch for the cu130 build and re-asserts the CUDA llama.cpp bundle so
+    # both training and inference use the GPU; unsloth-studio launches it.
+    scripts.unsloth-bootstrap
+    scripts.unsloth-studio
   ] ++ lib.optionals (isx86_64 && stirlingEnabled) [
     # stirling-pdf-desktop (Tauri + Java). Gated by `stirlingEnabled` in the
     # let-block above because upstream builds have been intermittently broken;
