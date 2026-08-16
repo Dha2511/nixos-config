@@ -521,6 +521,22 @@ in {
     pkgs.opencode
     pkgs.starship
 
+    # Flutter (Linux desktop targets). Hybrid split: the flutter SDK plus the
+    # native Linux build chain (clang/cmake/ninja for the engine glue code,
+    # pkg-config + gtk3 for the GTK host window) live here on every host —
+    # including the aarch64 M2, where `flutter build linux` works fine. The
+    # heavy multi-GB Android SDK + JDK live ONLY in the flake's
+    # `flutter-android` devShell (see devshells/flutter-android.nix) so they
+    # don't bloat all three host closures. `android-tools` ships adb/fastboot
+    # everywhere for physical-device testing without entering the shell.
+    pkgs.flutter
+    pkgs.clang
+    pkgs.cmake
+    pkgs.ninja
+    pkgs.pkg-config
+    pkgs.gtk3
+    pkgs.android-tools
+
     # Online search
     pkgs.surfraw
     pkgs.ddgr
@@ -592,7 +608,13 @@ in {
     # vivaldi (proprietary Chromium fork). The M2 VM skips all three.
     pkgs.bazecor
     pkgs.davinci-resolve
-    pkgs.vivaldi
+    # Vivaldi ships a free-codecs-only libffmpeg.so by default (no AAC/H.264),
+    # which breaks audio on most web video. proprietaryCodecs = true swaps in
+    # vivaldi-ffmpeg-codecs so sites like YouTube/Twitch play correctly.
+    (pkgs.vivaldi.override {
+      proprietaryCodecs = true;
+      enableWidevine = true;
+    })
   ];
 
   # Enable fontconfig so home-profile fonts are visible to GUI apps.

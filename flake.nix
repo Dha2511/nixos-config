@@ -83,8 +83,28 @@
             }
           ];
         };
+
+      # Package set for non-NixOS outputs (devShells). Imported separately
+      # because flake outputs don't inherit NixOS-module config: the Android
+      # SDK needs allowUnfree (android-sdk-cmdline-tools) and its license
+      # accepted to even evaluate. Mirrors what hosts/_common sets via
+      # nixpkgs.config, minus the host-only bits.
+      pkgsFor = system: import nixpkgs {
+        inherit system;
+        config = {
+          allowUnfree = true;
+          android_sdk.accept_license = true;
+        };
+      };
     in
     {
+      # Flutter Android devShell — x86_64-only: Google ships Android SDK
+      # linux binaries for x86_64 exclusively, so there is no aarch64 (M2)
+      # variant to offer. Linux-desktop Flutter work needs no shell at all
+      # (the toolchain lives in home.packages). See devshells/flutter-android.nix.
+      devShells.x86_64-linux.flutter-android =
+        import ./devshells/flutter-android.nix { pkgs = pkgsFor "x86_64-linux"; };
+
       nixosConfigurations = {
         # Main laptop: MSI, RTX 3050 Mobile + Intel iGPU hybrid.
         nixos = mkNixos {
