@@ -23,7 +23,8 @@ services).
 nixos-config/
 ├── flake.nix                  # mkNixos helper; threads username, homeDirectory,
 │                              # isNvidia, hostName through extraSpecialArgs.
-│                              # Three outputs: nixos, m2, desk.
+│                              # Three NixOS outputs: nixos, m2, desk — plus the
+│                              # flutter-android devShell (x86_64 only).
 ├── hosts/
 │   ├── _common/default.nix    # shared baseline (locale, fonts, user, Sway,
 │   │                          # portals, nix.settings + noctalia cache +
@@ -46,6 +47,9 @@ nixos-config/
 │   │                          # Unsloth Studio env/bootstrap/launcher
 │   └── assets/cube.png        # declarative Noctalia wallpaper → ~/.local/share/
 │                              # wallpapers/cube.png (referenced by config.toml)
+├── devshells/
+│   └── flutter-android.nix    # Flutter Android devShell (SDK 36 + NDK + JDK 21,
+│                              # x86_64 only) — see "Flutter development"
 └── xkb/graphite               # custom Graphite keyboard layout
 ```
 
@@ -358,13 +362,79 @@ Two caveats worth remembering:
   restores the lock. Re-run the switch if the GUI ever starts accepting
   changes again.
 
+## Flutter development (Android + Linux)
+
+Setup is split by weight, mirroring how the other big toolchains in this repo
+are handled:
+
+- **Global, every host** (`home/default.nix`): the Flutter SDK plus the native
+  Linux desktop build chain (`clang`, `cmake`, `ninja`, `pkg-config`, `gtk3`)
+  and `android-tools` (adb/fastboot for physical devices). `flutter build
+  linux` / `flutter run -d linux` work everywhere, including the aarch64 M2.
+- **Opt-in devShell** (`devshells/flutter-android.nix`): the multi-GB Android
+  SDK (platform 36, build-tools 36.0.0, NDK 28.2.13676358, cmake 3.22.1) +
+  OpenJDK 21. **x86_64 only** — Google ships Android SDK linux binaries for
+  x86_64 exclusively, so the M2 can target Linux desktop but not Android.
+
+### Entering the Android shell
+
+```console
+# ad-hoc:
+nix develop .#flutter-android
+
+# per-project, auto-entered on cd (direnv + nix-direnv are already wired):
+cd ~/code/my_app
+echo 'use flake /home/bob/nixos-config#flutter-android' > .envrc
+direnv allow
+```
+
+`flutter doctor` inside the shell should show Flutter, the Android toolchain
+and the Linux toolchain all green (Chrome/eglinfo lines are cosmetic).
+
+### NixOS workarounds baked into the shell
+
+Flutter-on-NixOS has two sharp edges; both are handled inside
+`devshells/flutter-android.nix` so projects need zero special config:
+
+1. **Gradle compiles flutter's gradle plugin in place.** Every app's
+   `android/settings.gradle.kts` does
+   `includeBuild("<flutter sdk>/packages/flutter_tools/gradle")` — that
+   directory must be *writable*, which a nix store path never is. The
+   shellHook builds a mostly-symlink farm in `~/.cache/flutter-writable`
+   (only `packages/flutter_tools/gradle`, ~10 MB, is a real writable copy)
+   and puts a `bin/flutter` wrapper pinning `FLUTTER_ROOT` to it on `PATH`,
+   so apps' `local.properties` point gradle at the writable copy. The farm
+   re-builds automatically when the nixpkgs flutter store path changes.
+2. **License checks vs read-only SDK.** `flutter doctor --android-licenses`
+   can't persist anything into the store, so the composed SDK accepts every
+   license at build time (`extraLicenses` + `android_sdk.accept_license` in
+   `flake.nix`'s `pkgsFor`).
+
+Prebuilt binaries gradle downloads at build time (gradle itself, `aapt2`,
+AGP jars) run fine because `programs.nix-ld` is enabled in
+`hosts/_common/default.nix` — same mechanism as uv/pip prebuilt wheels.
+
+### Physical devices
+
+`adb`/`fastboot` are on PATH globally (`android-tools`). Recent systemd
+(261 here) tags Android USB devices with `uaccess` built in, so no udev
+rules are needed — plug in, `adb devices`, accept the debugging prompt on
+the phone. The emulator is deliberately not shipped: KVM is unavailable
+inside the m2/desk VMs, and the laptop rarely needs it — flip to adding
+`includeEmulator` + a system image in the devshell if that changes.
+
+### Verified (2026-08, flutter 3.44.4)
+
+`flutter build linux` and `flutter build apk --debug` both complete from a
+fresh `flutter create` inside the devShell on the laptop.
+
 ## What's included
 
 - **Shell**: zsh (vi-mode, fzf-tab, syntax highlighting, CLIP aliases), starship prompt
 - **Compositor**: Sway with Noctalia (panel, launcher, notifications, theme switching)
 - **Terminal**: foot (server mode, Kanagawa dark/light palettes, live theme switch)
 - **Editors**: zed, helix, vim, micro
-- **Dev**: cargo, uv, python3, gh, git, podman, direnv, opencode
+- **Dev**: cargo, uv, python3, gh, git, podman, direnv, opencode, flutter (Linux desktop targets; Android via the `flutter-android` devShell)
 - **Media**: blender (prebuilt CUDA on NVIDIA, stock nixpkgs elsewhere), davinci-resolve (x86_64 only), obs-studio
 - **Diffusion**: ComfyUI via comfy-cli (CUDA launcher on NVIDIA, portable CPU launcher on M2)
 - **Local LLM**: Unsloth Studio (loopback-only, GGUF inference + no-code fine-tuning)
