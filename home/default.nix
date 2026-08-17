@@ -456,6 +456,8 @@ in {
     blenderPackage
     pkgs.typst
     pkgs.prusa-slicer
+    pkgs.inkscape
+    pkgs.gimp
 
     # Multimedia / apps
     pkgs.obs-studio

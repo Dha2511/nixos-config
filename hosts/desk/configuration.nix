@@ -77,6 +77,13 @@
   # here once you know its /dev/dri path inside the VM.
   programs.sway.extraOptions = [ "--unsupported-gpu" ]; # required for NVIDIA proprietary
 
+  # 3Dconnexion SpaceMouse Wireless (256f:c63a) for RoboManipBaselines
+  # teleop. pyspacemouse/easyhid opens the device via /dev/hidraw*, which is
+  # root-only by default unless a udev rule grants access.
+  services.udev.extraRules = ''
+    KERNEL=="hidraw*", ATTRS{idVendor}=="256f", ATTRS{idProduct}=="c63a", MODE="0666"
+  '';
+
   # QEMU guest agent: lets virt-manager request clean shutdown, read the guest
   # IP, and sync the clock. Harmless if the agent isn't installed on the host.
   services.qemuGuest.enable = true;
