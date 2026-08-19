@@ -448,6 +448,37 @@ in {
     categories = [ "Development" "Education" ];
   };
 
+  # Default applications (writes ~/.config/mimeapps.list). GIMP registers
+  # itself as the handler for a huge swath of image types on install, which
+  # made xdg-open launch GIMP for photos. Route the viewable formats to Loupe
+  # (the GNOME image viewer); GIMP stays the default for its own formats
+  # (.xcf, .psd, ...) that Loupe can't render. Vivaldi's html/http handlers
+  # are re-declared here so home-manager taking over the file doesn't drop
+  # them. `force` is needed because Vivaldi already wrote this file itself at
+  # runtime as a regular file — home-manager would refuse to clobber it.
+  xdg.configFile."mimeapps.list".force = true;
+
+  xdg.mimeApps = {
+    enable = true;
+    defaultApplications = {
+      "text/html" = "vivaldi-stable.desktop";
+      "x-scheme-handler/http" = "vivaldi-stable.desktop";
+      "x-scheme-handler/https" = "vivaldi-stable.desktop";
+      "x-scheme-handler/about" = "vivaldi-stable.desktop";
+      "x-scheme-handler/unknown" = "vivaldi-stable.desktop";
+      "image/avif" = "org.gnome.Loupe.desktop";
+      "image/bmp" = "org.gnome.Loupe.desktop";
+      "image/gif" = "org.gnome.Loupe.desktop";
+      "image/heic" = "org.gnome.Loupe.desktop";
+      "image/jpeg" = "org.gnome.Loupe.desktop";
+      "image/jxl" = "org.gnome.Loupe.desktop";
+      "image/png" = "org.gnome.Loupe.desktop";
+      "image/svg+xml" = "org.gnome.Loupe.desktop";
+      "image/tiff" = "org.gnome.Loupe.desktop";
+      "image/webp" = "org.gnome.Loupe.desktop";
+    };
+  };
+
   home.packages = [
     # GUI
     pkgs.zed-editor
