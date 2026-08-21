@@ -496,6 +496,9 @@ in {
     pkgs.zotero
     pkgs.anki
     pkgs.celluloid
+    # Zen Browser (Firefox fork) from its own flake input; substitutes the
+    # nixpkgs staging package because it tracks upstream releases faster.
+    inputs.zen-browser.packages.${pkgs.system}.default
 
     # CLI / Dev
     pkgs.micro

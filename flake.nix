@@ -22,6 +22,12 @@
     #      not found" fails at configure time. `wireplumberFix` below swaps in
     #      our nixpkgs' wireplumber (which has a valid .pc), fixing the build.
     noctalia.url = "github:noctalia-dev/noctalia/cachix";
+    # Zen Browser (Firefox fork) — packaged via a community flake that tracks
+    # upstream releases closely. Builds for x86_64-linux and aarch64-linux.
+    zen-browser = {
+      url = "github:youwen5/zen-browser-flake";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, home-manager, noctalia, ... }@inputs:
