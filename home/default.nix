@@ -529,7 +529,7 @@ in {
     pkgs.yt-dlp
     pkgs.ffmpeg
     pkgs.libnotify
-    pkgs.nvtop
+    pkgs.nvtopPackages.full
 
     # Fonts (also installed system-wide via hosts/_common/default.nix; mirrored
     # here so user-session apps pick them up before login completes)
