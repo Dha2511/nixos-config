@@ -132,8 +132,19 @@ let
   unsloth-env = pkgs.writeShellScriptBin "unsloth-env" ''
     export SSL_CERT_FILE="''${SSL_CERT_FILE:-/etc/ssl/certs/ca-bundle.crt}"
     export NIX_SSL_CERT_FILE="''${NIX_SSL_CERT_FILE:-$SSL_CERT_FILE}"
+    # Triton compiles a small CUDA launcher (.so) with the C compiler on first
+    # torch.compile (e.g. during image generation). NixOS has no cc/gcc on
+    # PATH by default, so expose the Nix gcc wrapper — same trick as the
+    # comfyui launcher. Required on NVIDIA hosts; harmless elsewhere.
+    export PATH="${pkgs.stdenv.cc}/bin:$PATH"
+    export CC="${pkgs.stdenv.cc}/bin/cc"
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.openssl.out}/lib:${pkgs.zlib}/lib${lib.optionalString isNvidia ":${nvidiaLibs}"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     export NIX_LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.openssl.out}/lib:${pkgs.zlib}/lib${lib.optionalString isNvidia ":${nvidiaLibs}"}''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
+    # Triton's NVIDIA backend runs `/sbin/ldconfig -p` to locate libcuda.so.1,
+    # which doesn't exist on NixOS — pointing the knob at the driver lib tree
+    # skips that subprocess entirely. Without it, torch.compile during image
+    # generation fails with "No such file or directory: '/sbin/ldconfig'".
+    ${lib.optionalString isNvidia "export TRITON_LIBCUDA_PATH=\"${nvidiaLibs}\""}
   '';
 
   # One-time Unsloth Studio installer. Runs unsloth's own install.sh (into
