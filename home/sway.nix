@@ -20,6 +20,113 @@ let
     '';
   };
 
+  # Deterministic scratchpad cycle-and-preview. Sway's native
+  # `scratchpad show` toggles on the focused window and misbehaves when
+  # chained, so these scripts target hide/show explicitly by con_id. Sway
+  # marks are globally unique, so membership uses a per-window mark named
+  # __scratch_<con_id>, and the transient singleton __scratch_shown flag
+  # says which window is currently previewing. Marks survive trips into and
+  # out of the scratchpad.
+  scratch-min = pkgs.writeShellApplication {
+    name = "scratch-min";
+    runtimeInputs = [ pkgs.jq pkgs.sway ];
+    text = ''
+      # Drop a stale previewing flag if minimizing straight out of cycle mode.
+      # NOTE: `mark --toggle` wipes ALL marks off the window (sway quirk), so
+      # use selective `unmark <name>` instead wherever only one mark should go.
+      swaymsg 'unmark __scratch_shown' >/dev/null
+      # Identify the focused window through a transient pending mark — sway
+      # applies `mark` natively to whatever really has focus, which is more
+      # reliable than reading .focused back out of the IPC tree.
+      swaymsg 'mark --add __scratch_pending' >/dev/null
+      fid=$(swaymsg -t get_tree | jq -r '[.. | objects | select((.marks // []) | index("__scratch_pending")) | .id] | .[0] // ""')
+      if [ -n "$fid" ]; then
+        swaymsg "[con_id=$fid] unmark __scratch_pending" >/dev/null
+        swaymsg "[con_id=$fid] mark --add __scratch_$fid" >/dev/null
+      fi
+      swaymsg 'move scratchpad' >/dev/null
+    '';
+  };
+
+  scratch-enter = pkgs.writeShellApplication {
+    name = "scratch-enter";
+    runtimeInputs = [ pkgs.jq pkgs.sway pkgs.libnotify ];
+    text = ''
+      shown=$(swaymsg -t get_tree | jq -r '[.. | objects | select((.marks // []) | index("__scratch_shown")) | .id] | .[0] // ""')
+      if [ -n "$shown" ]; then
+        swaymsg 'mode "scratchpad"' >/dev/null
+        exit 0
+      fi
+      first=$(swaymsg -t get_tree | jq -r '[.. | objects | select([(.marks // [])[]?] | any(test("^__scratch_[0-9]+$"))) | .id] | min // ""')
+      if [ -z "$first" ]; then
+        notify-send --transient --urgency=low --app-name=scratchpad "Scratchpad" "empty"
+        exit 0
+      fi
+      swaymsg "[con_id=$first] mark --add __scratch_shown" >/dev/null
+      swaymsg "[con_id=$first] scratchpad show" >/dev/null
+      swaymsg "[con_id=$first] focus" >/dev/null
+      swaymsg 'mode "scratchpad"' >/dev/null
+    '';
+  };
+
+  scratch-next = pkgs.writeShellApplication {
+    name = "scratch-next";
+    runtimeInputs = [ pkgs.jq pkgs.sway ];
+    text = ''
+      cur=$(swaymsg -t get_tree | jq -r '[.. | objects | select((.marks // []) | index("__scratch_shown")) | .id] | .[0] // ""')
+      if [ -n "$cur" ]; then
+        swaymsg "[con_id=$cur] move scratchpad" >/dev/null
+        swaymsg "[con_id=$cur] unmark __scratch_shown" >/dev/null
+      fi
+      ids=$(swaymsg -t get_tree | jq -r '[.. | objects | select([(.marks // [])[]?] | any(test("^__scratch_[0-9]+$"))) | .id] | sort | join(" ")')
+      if [ -z "$ids" ]; then
+        swaymsg 'mode "default"' >/dev/null
+        exit 0
+      fi
+      read -r -a order <<< "$ids"
+      next="''${order[0]}"
+      if [ -n "$cur" ]; then
+        for i in "''${order[@]}"; do
+          if [ "''${i}" -gt "''${cur}" ]; then
+            next="$i"
+            break
+          fi
+        done
+      fi
+      swaymsg "[con_id=$next] mark --add __scratch_shown" >/dev/null
+      swaymsg "[con_id=$next] scratchpad show" >/dev/null
+      swaymsg "[con_id=$next] focus" >/dev/null
+    '';
+  };
+
+  scratch-pick = pkgs.writeShellApplication {
+    name = "scratch-pick";
+    runtimeInputs = [ pkgs.jq pkgs.sway ];
+    text = ''
+      cur=$(swaymsg -t get_tree | jq -r '[.. | objects | select((.marks // []) | index("__scratch_shown")) | .id] | .[0] // ""')
+      if [ -n "$cur" ]; then
+        # Take the window out of the cycle set entirely and drop it straight
+        # back into the tiling layout.
+        swaymsg "[con_id=$cur] unmark" >/dev/null
+        swaymsg "[con_id=$cur] floating disable" >/dev/null
+      fi
+      swaymsg 'mode "default"' >/dev/null
+    '';
+  };
+
+  scratch-hide = pkgs.writeShellApplication {
+    name = "scratch-hide";
+    runtimeInputs = [ pkgs.jq pkgs.sway ];
+    text = ''
+      cur=$(swaymsg -t get_tree | jq -r '[.. | objects | select((.marks // []) | index("__scratch_shown")) | .id] | .[0] // ""')
+      if [ -n "$cur" ]; then
+        swaymsg "[con_id=$cur] move scratchpad" >/dev/null
+        swaymsg "[con_id=$cur] unmark __scratch_shown" >/dev/null
+      fi
+      swaymsg 'mode "default"' >/dev/null
+    '';
+  };
+
   # The custom Graphite XKB layout is installed system-wide by the
   # services.xserver.xkb module in hosts/_common/default.nix (every host is
   # NixOS). US + altgr-intl stays group 0; Graphite is group 1.
@@ -236,12 +343,23 @@ in {
         # Sway has a "scratchpad", which is a bag of holding for windows.
         # You can send windows there and get them back later.
 
-        # Move the currently focused window to the scratchpad
-        bindsym $mod+Shift+minus move scratchpad
+        # Move the currently focused window to the scratchpad, marking it so
+        # the cycle scripts can track it across hide/show trips.
+        bindsym $mod+Shift+minus exec ${scratch-min}/bin/scratch-min
 
-        # Show the next scratchpad window or hide the focused scratchpad window.
-        # If there are multiple scratchpad windows, this command cycles through them.
-        bindsym $mod+minus scratchpad show
+        # Cycle-and-preview: $mod+minus surfaces the next scratchpad window
+        # (floating + focused) and enters a mode. Each space press advances
+        # exactly one window (explicit hide + targeted show — no reliance on
+        # sway's toggle semantics). Return picks the current window and drops
+        # it from the cycle set (re-tile with $mod+Shift+space); Escape
+        # re-minimizes it back.
+        mode "scratchpad" {
+            bindsym $mod+minus   exec ${scratch-hide}/bin/scratch-hide
+            bindsym space        exec ${scratch-next}/bin/scratch-next
+            bindsym Return       exec ${scratch-pick}/bin/scratch-pick
+            bindsym Escape       exec ${scratch-hide}/bin/scratch-hide
+        }
+        bindsym $mod+minus       exec ${scratch-enter}/bin/scratch-enter
     #
     # Resizing containers:
     #
