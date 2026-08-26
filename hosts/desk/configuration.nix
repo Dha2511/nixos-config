@@ -43,6 +43,11 @@
 
   networking.hostName = "desk";
 
+  # Company certificate
+  security.pki.certificateFiles = [
+    /etc/nixos/certs/ca.crt
+  ];
+
   # --- Boot (UEFI via OVMF in QEMU) ---
   boot.loader.systemd-boot.enable = true;
   boot.loader.systemd-boot.configurationLimit = 5;
