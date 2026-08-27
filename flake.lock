@@ -20,6 +20,26 @@
         "type": "github"
       }
     },
+    "llm-agent": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1787809725,
+        "narHash": "sha256-MX4vDLmxMYmHlyfbtjrlb7yfo0CQNDXj4SNCzqXYtCY=",
+        "ref": "refs/heads/main",
+        "rev": "b25ffc6ede256a8fc09c42ab6f6e9bb12816d054",
+        "revCount": 1,
+        "type": "git",
+        "url": "https://github.com/Dha2511/llm-agent"
+      },
+      "original": {
+        "type": "git",
+        "url": "https://github.com/Dha2511/llm-agent"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1786247143,
@@ -71,6 +91,7 @@
     "root": {
       "inputs": {
         "home-manager": "home-manager",
+        "llm-agent": "llm-agent",
         "nixpkgs": "nixpkgs",
         "noctalia": "noctalia",
         "zen-browser": "zen-browser"

@@ -43,7 +43,8 @@
 
   networking.hostName = "desk";
 
-  # Company certificate
+  # Company certificate. Lives only on disk (/etc/nixos/certs/, untracked) —
+  # deliberately not committed to this repo; build with --impure.
   security.pki.certificateFiles = [
     /etc/nixos/certs/ca.crt
   ];

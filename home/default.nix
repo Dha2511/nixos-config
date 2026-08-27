@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, noctalia-pkg, username, homeDirectory, isNvidia, hostName, ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, username, homeDirectory, isNvidia, hostName, hasTabby, ... }:
 
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
@@ -153,6 +153,15 @@ in {
   xdg.configFile."helix/config.toml".text = ''
     theme = "noctalia"
   '';
+
+  # opencode global config on hosts running the local tabbyAPI server. The
+  # file's source of truth is the llm-agent repo (opencode.json, exposed as
+  # packages.opencode-config); editing it there + `nh os switch` updates this.
+  # Registers the TabbyAPI provider so tabby/Qwen3.8-27B-exl3 is selectable
+  # from every repo; small_model is left to opencode's primary-model fallback.
+  xdg.configFile."opencode/opencode.json" = lib.mkIf hasTabby {
+    source = inputs.llm-agent.packages.${pkgs.system}.opencode-config + "/opencode.json";
+  };
 
   # Noctalia config — FULLY DECLARATIVE. This block is the single source of
   # truth: it deep-merges with Noctalia's built-in defaults, and the former

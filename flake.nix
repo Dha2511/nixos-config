@@ -28,6 +28,13 @@
       url = "github:youwen5/zen-browser-flake";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    # Local inference stack (tabbyAPI + Qwen3.8-27B). Source of truth for the
+    # opencode provider config deployed via home/default.nix.
+    llm-agent = {
+      # git+https (not github:) so flake updates don't hit the GitHub API.
+      url = "git+https://github.com/Dha2511/llm-agent";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs = { self, nixpkgs, home-manager, noctalia, ... }@inputs:
@@ -54,6 +61,9 @@
         , username ? "bob"
         , homeDirectory ? "/home/${username}"
         , isNvidia
+        # Host runs the llm-agent tabbyAPI server and gets its opencode provider
+        # config deployed globally (see home/default.nix).
+        , hasTabby ? false
         , extraModules ? [ ]
         }:
         nixpkgs.lib.nixosSystem {
@@ -66,7 +76,7 @@
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
               home-manager.extraSpecialArgs = {
-                inherit inputs username homeDirectory isNvidia hostName;
+                inherit inputs username homeDirectory isNvidia hostName hasTabby;
                 noctalia-pkg = wireplumberFix system;
               };
               home-manager.users.${username} = import ./home;
@@ -105,6 +115,7 @@
           hostName = "desk";
           username = "bob";
           isNvidia = true;
+          hasTabby = true;
         };
       };
     };
