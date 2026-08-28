@@ -230,6 +230,12 @@ in {
         tap enabled
     }
 
+    # Mac-style 3-finger horizontal swipe switches workspaces: fingers move
+    # right → content follows → previous workspace (mirrors macOS "natural"
+    # scrolling). Pinned to exactly 3 fingers so 4/5-finger swipes stay free.
+    bindgesture swipe:3:right workspace prev
+    bindgesture swipe:3:left workspace next
+
     ${keyboardConfig}
 
     ### Key bindings
