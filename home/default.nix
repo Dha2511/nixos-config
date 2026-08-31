@@ -558,6 +558,7 @@ in {
     pkgs.ffmpeg
     pkgs.libnotify
     pkgs.nvtopPackages.full
+    pkgs.htop
 
     # Fonts (also installed system-wide via hosts/_common/default.nix; mirrored
     # here so user-session apps pick them up before login completes)
