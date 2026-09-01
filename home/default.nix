@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, noctalia-pkg, username, homeDirectory, isNvidia, hostName, hasTabby, ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, username, homeDirectory, isNvidia, hostName, hasTabby, ... }:
 
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
@@ -379,6 +379,11 @@ in {
   # above. Managed as a read-only symlink into the nix store.
   home.file.".local/share/wallpapers/cube.png".source = wallpaper;
 
+  # bat: use the built-in "ansi" theme (bat reads ~/.config/bat/config).
+  home.file.".config/bat/config".text = ''
+    --theme "ansi"
+  '';
+
   # LOCK: neutralise the GUI-managed override layer. Noctalia layers
   # ~/.local/state/noctalia/settings.toml ABOVE config.toml, so any value the
   # Settings UI writes there would silently win. We pin it to an empty nix-store
@@ -517,6 +522,9 @@ in {
     pkgs.python3
     pkgs.git
     pkgs.gh
+    pkgs.bat
+    pkgs.markless
+    gitbutler
     pkgs.podman
     pkgs.opencode
     pkgs.starship

@@ -78,6 +78,7 @@
               home-manager.extraSpecialArgs = {
                 inherit inputs username homeDirectory isNvidia hostName hasTabby;
                 noctalia-pkg = wireplumberFix system;
+                gitbutler = gitbutlerPkg system;
               };
               home-manager.users.${username} = import ./home;
             }
@@ -96,8 +97,27 @@
           android_sdk.accept_license = true;
         };
       };
+
+      # GitButler CLI as a prebuilt binary (no source build). Exposed as a
+      # flake `packages` output (for `nix build .#gitbutler`) and wired into the
+      # home config via extraSpecialArgs below.
+      #
+      # FSL-1.1-MIT is marked unfree in nixpkgs, and this pkgs instance comes
+      # from the flake input — the system-level `nixpkgs.config.allowUnfree =
+      # true` (hosts/_common) applies to a different instance and never
+      # reaches here. Import nixpkgs with the config set, like pkgsFor above.
+      gitbutlerPkg = system:
+        (import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        }).callPackage ./pkgs/gitbutler { };
     in
     {
+      # GitButler CLI prebuilt — buildable standalone (nix build .#gitbutler)
+      # without triggering a full host rebuild.
+      packages.x86_64-linux.gitbutler = gitbutlerPkg "x86_64-linux";
+      packages.aarch64-linux.gitbutler = gitbutlerPkg "aarch64-linux";
+
       # Flutter Android devShell — x86_64-only: Google ships Android SDK
       # linux binaries for x86_64 exclusively, so there is no aarch64 (M2)
       # variant to offer. Linux-desktop Flutter work needs no shell at all
