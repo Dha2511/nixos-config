@@ -75,6 +75,9 @@
             {
               home-manager.useGlobalPkgs = true;
               home-manager.useUserPackages = true;
+              # Move conflicting non-managed files aside (e.g. a stale regular
+              # ~/.config/sway/config) instead of failing activation.
+              home-manager.backupFileExtension = ".hmbk";
               home-manager.extraSpecialArgs = {
                 inherit inputs username homeDirectory isNvidia hostName hasTabby;
                 noctalia-pkg = wireplumberFix system;

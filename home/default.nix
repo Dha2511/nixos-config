@@ -384,17 +384,12 @@ in {
     --theme "ansi"
   '';
 
-  # LOCK: neutralise the GUI-managed override layer. Noctalia layers
-  # ~/.local/state/noctalia/settings.toml ABOVE config.toml, so any value the
-  # Settings UI writes there would silently win. We pin it to an empty nix-store
-  # file (read-only symlink): empty = no overrides = config.toml is the sole
-  # source of truth, and the GUI's writes to this path now fail (toggles no-op).
-  # Acceptance: after `nh os switch .`, run `noctalia config validate` and toggle
-  # something in Settings to confirm it degrades gracefully (no shell crash). If
-  # Noctalia ever rename-replaces the symlink, it regains control until the next
-  # rebuild — re-run `nh os switch .` to restore the lock. First switch requires
-  # `rm ~/.local/state/noctalia/settings.toml` (home-manager won't clobber it).
-  home.file.".local/state/noctalia/settings.toml".text = "";
+  # settings.toml is intentionally NOT managed here. It's Noctalia's writable
+  # runtime layer (layered above config.toml) where theme-mode-toggle ($mod+t)
+  # persists the active light/dark mode. An earlier read-only "lock" on this path
+  # broke the toggle, since Noctalia can't write a read-only store symlink. All
+  # real settings stay declarative in config.toml; if the GUI ever writes other
+  # values here and shadows config.toml, `rm` this file and reload to reset.
 
   # Launcher entry so ComfyUI appears in wmenu / the Noctalia launcher.
   # Runs in a foot window so server logs are visible; closing the window stops
