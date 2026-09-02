@@ -90,6 +90,11 @@
     KERNEL=="hidraw*", ATTRS{idVendor}=="256f", ATTRS{idProduct}=="c63a", MODE="0666"
   '';
 
+  # SpaceNav daemon: installs spacenavd into systemd and starts it so 3D-mouse
+  # apps (Blender) can reach the device over the default /var/spnavd/socket.
+  # Without this the daemon never runs and Blender sees no SpaceMouse.
+  hardware.spacenavd.enable = true;
+
   # QEMU guest agent: lets virt-manager request clean shutdown, read the guest
   # IP, and sync the clock. Harmless if the agent isn't installed on the host.
   services.qemuGuest.enable = true;
