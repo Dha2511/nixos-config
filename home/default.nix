@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, username, homeDirectory, isNvidia, hostName, hasTabby, ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, username, homeDirectory, isNvidia, hostName, hasTabby, isHeadless ? false, ... }:
 
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
@@ -65,7 +65,9 @@ let
   wallpaperDir = "${homeDirectory}/.local/share/wallpapers";
   wallpaperPath = "${wallpaperDir}/cube.png";
 in {
-  imports = [ ./sway.nix ];
+  # Sway session config is GUI-only — never imported on the headless host
+  # (lab), which also keeps sway.nix's noctalia/swaymsg wiring out of reach.
+  imports = lib.optional (!isHeadless) ./sway.nix;
 
   home.username = username;
   home.homeDirectory = homeDirectory;
@@ -80,7 +82,7 @@ in {
   # gtk.enable sets gtk.cursorTheme from these values; the live compositor
   # cursor is swapped by the `cursor-sync-theme` hook + the `seat *
   # xcursor_theme` line in the Sway config (home/sway.nix).
-  home.pointerCursor = {
+  home.pointerCursor = lib.mkIf (!isHeadless) {
     enable = true;
     package = pkgs.phinger-cursors;
     name = "phinger-cursors-dark";
@@ -88,12 +90,15 @@ in {
     gtk.enable = true;
   };
 
-  # Foot terminal (server mode). Both palettes are defined natively so foot
+  # Foot terminal (server mode). GUI-only — headless hosts live in tmux over
+  # SSH, there is no Wayland session to open a terminal in. Both palettes are
+  # defined natively so foot
   # holds [colors-dark] and [colors-light] at once and can switch in-process via
   # SIGUSR1/SIGUSR2 — driven by the `foot-sync-theme` Noctalia hook — with no
   # restart and no reliance on foot's config file watcher.
   # Palettes are Kanagawa: Wave (dark) / Lotus (light), captured from Noctalia.
-  xdg.configFile."foot/foot.ini".text = ''
+  xdg.configFile."foot/foot.ini" = lib.mkIf (!isHeadless) {
+    text = ''
     [main]
     shell=zsh
     font = CommitMono Nerd Font Mono:size=14
@@ -146,12 +151,15 @@ in {
     selection-background=c9cbd1
     cursor=f2ecbc 43436c
   '';
+  };
 
   # Helix: use the noctalia theme file noctalia generates at
-  # ~/.config/helix/themes/noctalia.toml. Helix doesn't live-reload themes —
-  # run :config-reload (or restart) after a mode switch.
+  # ~/.config/helix/themes/noctalia.toml on GUI hosts. Headless hosts have no
+  # noctalia, so they get the built-in Kanagawa theme (same palette family).
+  # Helix doesn't live-reload themes — run :config-reload (or restart) after a
+  # mode switch.
   xdg.configFile."helix/config.toml".text = ''
-    theme = "noctalia"
+    theme = "${if isHeadless then "kanagawa" else "noctalia"}"
   '';
 
   # opencode global config on hosts running the local tabbyAPI server. The
@@ -163,7 +171,9 @@ in {
     source = inputs.llm-agent.packages.${pkgs.system}.opencode-config + "/opencode.json";
   };
 
-  # Noctalia config — FULLY DECLARATIVE. This block is the single source of
+  # Noctalia config — FULLY DECLARATIVE. GUI-only: headless hosts have neither
+  # the shell nor a bar, so the whole block is gated. This block is the single
+  # source of
   # truth: it deep-merges with Noctalia's built-in defaults, and the former
   # GUI-managed override layer (~/.local/state/noctalia/settings.toml) is now
   # pinned to an empty read-only file (see home.file below) so the Settings UI
@@ -171,7 +181,8 @@ in {
   # The keys below the `--- migrated ---` marker were lifted verbatim from that
   # settings.toml; the three wallpaper `path` keys were rewritten to point at
   # the repo-managed wallpaper (see `wallpaperPath` in the let-block).
-  xdg.configFile."noctalia/config.toml".text = ''
+  xdg.configFile."noctalia/config.toml" = lib.mkIf (!isHeadless) {
+    text = ''
     [hooks]
     started = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
     theme_mode_changed = [ "cursor-sync-theme", "color-scheme-sync", "foot-sync-theme" ]
@@ -374,10 +385,14 @@ in {
     [widget.weather]
     show_condition = false
   '';
+  };
 
   # Ship the declarative wallpaper to the stable path config.toml references
-  # above. Managed as a read-only symlink into the nix store.
-  home.file.".local/share/wallpapers/cube.png".source = wallpaper;
+  # above. GUI-only (noctalia reads it). Managed as a read-only symlink into
+  # the nix store.
+  home.file.".local/share/wallpapers/cube.png" = lib.mkIf (!isHeadless) {
+    source = wallpaper;
+  };
 
   # bat: use the built-in "ansi" theme (bat reads ~/.config/bat/config).
   home.file.".config/bat/config".text = ''
@@ -392,12 +407,13 @@ in {
   # values here and shadows config.toml, `rm` this file and reload to reset.
 
   # Launcher entry so ComfyUI appears in wmenu / the Noctalia launcher.
+  # GUI-only — headless hosts start the server over SSH instead.
   # Runs in a foot window so server logs are visible; closing the window stops
   # the server (and on NVIDIA laptops, lets the dGPU re-suspend via RTD3).
   # The `comfyui` binary dispatched here is the CUDA-pinned launcher on NVIDIA
   # hosts and the portable CPU launcher on the M2 — same name, same entry.
   # The web UI is at http://localhost:8188 once it's up.
-  xdg.desktopEntries.comfyui = {
+  xdg.desktopEntries.comfyui = lib.mkIf (!isHeadless) {
     name = "ComfyUI";
     genericName = "Diffusion Model Studio";
     comment = "Node-based diffusion GUI";
@@ -413,7 +429,7 @@ in {
   # quit). The plain entry shadows the packaged blender.desktop and claims
   # the .blend mimetype as the default. On the M2 VM (no NVIDIA, no Intel
   # hybrid), only the plain entry exists — `blender-nvidia` is gated below.
-  xdg.desktopEntries.blender = {
+  xdg.desktopEntries.blender = lib.mkIf (!isHeadless) {
     name = "Blender";
     genericName = "3D Modeling Suite";
     comment = if isNvidia then
@@ -431,7 +447,8 @@ in {
   # NVIDIA-only entry: PRIME-offloaded Blender (viewport + CUDA/OptiX on the
   # dGPU). Gated by mkIf so the option is entirely absent on non-NVIDIA hosts
   # (e.g. the M2 VM) — no broken .desktop symlink in ~/.local/share/applications.
-  xdg.desktopEntries.blender-nvidia = lib.mkIf isNvidia {
+  # GUI-only: headless hosts run blender directly (no launcher, no PRIME).
+  xdg.desktopEntries.blender-nvidia = lib.mkIf (isNvidia && !isHeadless) {
     name = "Blender (NVIDIA GPU)";
     genericName = "3D Modeling Suite";
     comment = "Viewport + Cycles CUDA/OptiX on the RTX 3050 dGPU";
@@ -442,12 +459,14 @@ in {
     categories = [ "Graphics" "3DGraphics" ];
   };
 
-  # Unsloth Studio launcher. Runs in a foot window so server logs are visible.
+  # Unsloth Studio launcher. GUI-only (headless hosts run `unsloth-studio`
+  # over SSH; same wrapper, same web UI). Runs in a foot window so server logs
+  # are visible.
   # Dispatches to the `unsloth-studio` wrapper (sources unsloth-env, so NVIDIA
   # hosts get the driver libs torch needs) rather than the raw installer
   # binary — launching the installer's own entry bypasses that env and shows
   # "CPU training backend" on a GPU host.
-  xdg.desktopEntries.unsloth-studio = {
+  xdg.desktopEntries.unsloth-studio = lib.mkIf (!isHeadless) {
     name = "Unsloth Studio";
     genericName = "LLM Training Studio";
     comment = "No-code local LLM fine-tuning GUI";
@@ -465,9 +484,12 @@ in {
   # are re-declared here so home-manager taking over the file doesn't drop
   # them. `force` is needed because Vivaldi already wrote this file itself at
   # runtime as a regular file — home-manager would refuse to clobber it.
-  xdg.configFile."mimeapps.list".force = true;
+  # GUI-only: with no desktop apps there is nothing to route on a headless host.
+  xdg.configFile."mimeapps.list" = lib.mkIf (!isHeadless) {
+    force = true;
+  };
 
-  xdg.mimeApps = {
+  xdg.mimeApps = lib.mkIf (!isHeadless) {
     enable = true;
     defaultApplications = {
       "text/html" = "vivaldi-stable.desktop";
@@ -488,30 +510,24 @@ in {
     };
   };
 
+  # Package tiers:
+  #   unconditional — TUI/CLI tools + server-style payloads that need no local
+  #     display (Blender for `blender -b` Cycles/python-API jobs, ComfyUI and
+  #     Unsloth Studio as web-UI servers reached over SSH tunnels on lab).
+  #   !isHeadless  — GUI apps (editors, browsers, media) + the desktop stack
+  #     (foot, Noctalia, fonts, theme hooks) + the Flutter dev toolchain.
   home.packages = [
-    # GUI
-    pkgs.zed-editor
+    # Editors (TUI) + CLI document tooling
     pkgs.helix
     pkgs.vim
-    blenderPackage
+    pkgs.micro
     pkgs.typst
-    pkgs.prusa-slicer
-    pkgs.inkscape
-    pkgs.gimp
 
-    # Multimedia / apps
-    pkgs.obs-studio
-    pkgs.loupe
-    pkgs.zotero
-    pkgs.anki
-    pkgs.celluloid
-    # Zen Browser (Firefox fork) from its own flake input; substitutes the
-    # nixpkgs staging package because it tracks upstream releases faster.
-    inputs.zen-browser.packages.${pkgs.system}.default
+    # Blender: full app on GUI hosts; on the headless box only the binary is
+    # exercised, via `blender -b` background renders / the python API.
+    blenderPackage
 
     # CLI / Dev
-    pkgs.micro
-    pkgs.foot
     pkgs.cargo
     pkgs.uv
     pkgs.python3
@@ -523,22 +539,6 @@ in {
     pkgs.podman
     pkgs.opencode
     pkgs.starship
-
-    # Flutter (Linux desktop targets). Hybrid split: the flutter SDK plus the
-    # native Linux build chain (clang/cmake/ninja for the engine glue code,
-    # pkg-config + gtk3 for the GTK host window) live here on every host —
-    # including the aarch64 M2, where `flutter build linux` works fine. The
-    # heavy multi-GB Android SDK + JDK live ONLY in the flake's
-    # `flutter-android` devShell (see devshells/flutter-android.nix) so they
-    # don't bloat all three host closures. `android-tools` ships adb/fastboot
-    # everywhere for physical-device testing without entering the shell.
-    pkgs.flutter
-    pkgs.clang
-    pkgs.cmake
-    pkgs.ninja
-    pkgs.pkg-config
-    pkgs.gtk3
-    pkgs.android-tools
 
     # Online search
     pkgs.surfraw
@@ -559,11 +559,61 @@ in {
     pkgs.fd
     pkgs.yt-dlp
     pkgs.ffmpeg
-    pkgs.libnotify
     pkgs.nvtopPackages.full
     pkgs.htop
 
-    # Fonts (also installed system-wide via hosts/_common/default.nix; mirrored
+    # ComfyUI launcher + one-time bootstrap (comfy-cli-managed install).
+    # NVIDIA hosts pull the CUDA variant automatically via comfyuiScript.
+    # Server workload: web UI at http://localhost:8188 (SSH-tunnel on lab).
+    comfyuiScript
+    scripts.comfyui-bootstrap
+
+    # Unsloth Studio — local LLM fine-tuning + GGUF inference. The bootstrap
+    # script runs unsloth's installer and (on NVIDIA hosts) swaps its CPU
+    # torch for the cu130 build and re-asserts the CUDA llama.cpp bundle so
+    # both training and inference use the GPU; unsloth-studio launches it.
+    # Server workload: web UI at http://127.0.0.1:8888 (SSH-tunnel on lab).
+    scripts.unsloth-bootstrap
+    scripts.unsloth-studio
+  ] ++ lib.optionals (!isHeadless) [
+    # GUI
+    pkgs.zed-editor
+    pkgs.prusa-slicer
+    pkgs.inkscape
+    pkgs.gimp
+
+    # Multimedia / apps
+    pkgs.obs-studio
+    pkgs.loupe
+    pkgs.zotero
+    pkgs.anki
+    pkgs.celluloid
+    # Zen Browser (Firefox fork) from its own flake input; substitutes the
+    # nixpkgs staging package because it tracks upstream releases faster.
+    inputs.zen-browser.packages.${pkgs.system}.default
+
+    # Foot terminal. notify-send needs Noctalia's notification daemon, so
+    # libnotify only makes sense alongside it.
+    pkgs.foot
+    pkgs.libnotify
+
+    # Flutter (Linux desktop targets). Hybrid split: the flutter SDK plus the
+    # native Linux build chain (clang/cmake/ninja for the engine glue code,
+    # pkg-config + gtk3 for the GTK host window) live here on every GUI host —
+    # including the aarch64 M2, where `flutter build linux` works fine. The
+    # heavy multi-GB Android SDK + JDK live ONLY in the flake's
+    # `flutter-android` devShell (see devshells/flutter-android.nix) so they
+    # don't bloat the host closures. `android-tools` ships adb/fastboot
+    # for physical-device testing without entering the shell.
+    pkgs.flutter
+    pkgs.clang
+    pkgs.cmake
+    pkgs.ninja
+    pkgs.pkg-config
+    pkgs.gtk3
+    pkgs.android-tools
+
+    # Fonts (also installed system-wide via hosts/_common/graphical.nix; mirrored
     # here so user-session apps pick them up before login completes)
     pkgs.nerd-fonts.commit-mono
     pkgs.nerd-fonts.departure-mono
@@ -588,25 +638,13 @@ in {
     cursor-sync-theme
     color-scheme-sync
     foot-sync-theme
-
-    # ComfyUI launcher + one-time bootstrap (comfy-cli-managed install).
-    # NVIDIA hosts pull the CUDA variant automatically via comfyuiScript.
-    comfyuiScript
-    scripts.comfyui-bootstrap
-
-    # Unsloth Studio — local LLM fine-tuning + GGUF inference. The bootstrap
-    # script runs unsloth's installer and (on NVIDIA hosts) swaps its CPU
-    # torch for the cu130 build and re-asserts the CUDA llama.cpp bundle so
-    # both training and inference use the GPU; unsloth-studio launches it.
-    scripts.unsloth-bootstrap
-    scripts.unsloth-studio
-  ] ++ lib.optionals (isx86_64 && stirlingEnabled) [
+  ] ++ lib.optionals (!isHeadless && isx86_64 && stirlingEnabled) [
     # stirling-pdf-desktop (Tauri + Java). Gated by `stirlingEnabled` in the
     # let-block above because upstream builds have been intermittently broken;
     # also x86_64-only (no point on the aarch64 M2). The wrapper lives in
     # scripts.nix#stirling-pdf-wrapped.
     scripts.stirling-pdf-wrapped
-  ] ++ lib.optionals isx86_64 [
+  ] ++ lib.optionals (!isHeadless && isx86_64) [
     # x86_64-only. Upstream doesn't ship aarch64 binaries for these.
     # bazecor (Dygma keyboard configurator), davinci-resolve (Blackmagic),
     # vivaldi (proprietary Chromium fork). The M2 VM skips all three.
@@ -622,7 +660,8 @@ in {
   ];
 
   # Enable fontconfig so home-profile fonts are visible to GUI apps.
-  fonts.fontconfig.enable = true;
+  # Headless hosts have no GUI rendering — skip it.
+  fonts.fontconfig.enable = !isHeadless;
 
   # direnv — auto-loads devShells on `cd` into a flake repo.
   # nix-direnv caches `nix develop` results so entry is instant after the first.
@@ -641,7 +680,8 @@ in {
 
     # Login shell (.zprofile): auto-start Sway on tty1 when no compositor
     # is already running (works for both auto and manual tty1 login).
-    profileExtra = ''
+    # GUI-only — lab boots to a plain console/SSH box.
+    profileExtra = lib.optionalString (!isHeadless) ''
       if [ -z "$WAYLAND_DISPLAY" ] && [ "$XDG_VTNR" = 1 ]; then
         exec sway
       fi
@@ -667,7 +707,8 @@ in {
     #   CLIPT   stdout, last 50 lines   CLIPERT  stdout + stderr, last 50 lines
     # e.g. `ls CLIP` → `ls | wl-copy`
     #      `nh os switch . CLIPERT` → `nh os switch . 2>&1 | tail -n 50 | wl-copy`
-    shellGlobalAliases = {
+    # GUI-only: wl-copy talks to a Wayland compositor, which lab doesn't run.
+    shellGlobalAliases = lib.mkIf (!isHeadless) {
       CLIP = "| wl-copy";
       CLIPT = "| tail -n 50 | wl-copy";
       CLIPER = "2>&1 | wl-copy";

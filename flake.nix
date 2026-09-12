@@ -1,5 +1,5 @@
 {
-  description = "Portable NixOS config (laptop + 2 VMs)";
+  description = "Portable NixOS config (laptop, 2 VMs + headless GPU box)";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -64,6 +64,11 @@
         # Host runs the llm-agent tabbyAPI server and gets its opencode provider
         # config deployed globally (see home/default.nix).
         , hasTabby ? false
+        # Headless host: no display/compositor. Skips the graphical layer in
+        # hosts/_common and every GUI-only part of home/default.nix (Sway,
+        # Noctalia, foot, fonts, desktop entries), keeping the CLI/server
+        # payloads (Blender CLI, ComfyUI, nvtop, ...).
+        , isHeadless ? false
         , extraModules ? [ ]
         }:
         nixpkgs.lib.nixosSystem {
@@ -79,8 +84,11 @@
               # ~/.config/sway/config) instead of failing activation.
               home-manager.backupFileExtension = ".hmbk";
               home-manager.extraSpecialArgs = {
-                inherit inputs username homeDirectory isNvidia hostName hasTabby;
-                noctalia-pkg = wireplumberFix system;
+                inherit inputs username homeDirectory isNvidia hostName hasTabby isHeadless;
+                # Noctalia is GUI-only; headless hosts get null so the noctalia
+                # flake is never even evaluated (lazy attrset value). The home
+                # module only references it inside !isHeadless blocks.
+                noctalia-pkg = if isHeadless then null else wireplumberFix system;
                 gitbutler = gitbutlerPkg system;
               };
               home-manager.users.${username} = import ./home;
@@ -159,6 +167,20 @@
           username = "bob";
           isNvidia = true;
           hasTabby = true;
+        };
+
+        # Headless GPU compute box: 4x NVIDIA RTX 6000 Ada, no display, no
+        # compositor. SSH-only access (services.openssh in hosts/lab), web UIs
+        # (ComfyUI :8188, Unsloth :8888) reached via `ssh -L` tunnels. Keeps the
+        # terminal payloads of the desktop hosts: Blender (CLI/background
+        # Cycles), ComfyUI, Unsloth Studio, nvtop, and the usual CLI/dev tools.
+        # tabbyAPI NOT wired yet — llm-agent is still WIP (hasTabby = false).
+        lab = mkNixos {
+          system = "x86_64-linux";
+          hostName = "lab";
+          username = "bob";
+          isNvidia = true;
+          isHeadless = true;
         };
       };
     };
