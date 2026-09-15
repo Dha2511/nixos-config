@@ -27,11 +27,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1787815333,
-        "narHash": "sha256-G1EBMr8usYO3FLmhucOwkTER7K3ByrXb8GaRHiKpoPo=",
+        "lastModified": 1789338445,
+        "narHash": "sha256-ocGuC+Vfdrd+gqNTRxAn8IOYcU6+afcAWLBOIRCNAJI=",
         "ref": "refs/heads/main",
-        "rev": "e079ad96a9150c6c55273c1716980158c9b8210f",
-        "revCount": 3,
+        "rev": "da68ec5e22243790697fe76ee42084dd292379e2",
+        "revCount": 44,
         "type": "git",
         "url": "https://github.com/Dha2511/llm-agent"
       },

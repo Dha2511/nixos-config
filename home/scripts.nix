@@ -212,7 +212,20 @@ let
     fi
     source ${unsloth-env}/bin/unsloth-env
     exec "$HOME/.local/bin/unsloth" studio -H 127.0.0.1 -p 8888 "$@"
+'';
+
+  # vLLM inference/serving launcher. Loopback only — never exposes the server
+  # to the LAN; reach the OpenAI-compatible API over
+  # `ssh -L 8000:127.0.0.1:8000 <host>`. The vllm binary is built with
+  # autoAddDriverRunpath and carries its CUDA runtime deps, so it locates
+  # libcuda + cublas/cudnn on its own; the driver tree is still added to
+  # LD_LIBRARY_PATH so torch's runtime dlopen of libcuda.so.1 is robust,
+  # matching the other NVIDIA launchers. The model is the first arg:
+  # `vllm-serve /path/to/model [extra vllm flags]`.
+  vllm-serve = pkgs.writeShellScriptBin "vllm-serve" ''
+    export LD_LIBRARY_PATH="${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    exec vllm serve --host 127.0.0.1 --port 8000 "$@"
   '';
 in {
-  inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin unsloth-env unsloth-bootstrap unsloth-studio;
+  inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin unsloth-env unsloth-bootstrap unsloth-studio vllm-serve;
 }

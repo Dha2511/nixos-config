@@ -81,6 +81,11 @@ Current state of the committed configs:
   portable equivalents. **Do not** infer this from `isx86_64` — x86_64 ≠ NVIDIA
   (the desk VM is x86_64 + NVIDIA; the M2 is aarch64 + no NVIDIA).
 - `hostName` — selects `hosts/${hostName}/`.
+- `vllmGpuTargets` — NVIDIA compute-capability target(s) for the CUDA vLLM
+  build (e.g. `[ "8.6" ]` for an RTX 3050, `[ "8.9" ]` for an A6000 Ada).
+  Empty (the default) means no vLLM on that host. A non-empty list also sets
+  `nixpkgs.config.cudaSupport = true` for the host so torch/vLLM/flashinfer
+  build as CUDA — see the **vLLM** section.
 
 A handful of packages are gated separately by `pkgs.stdenv.hostPlatform.isx86_64`
 (bazecor, davinci-resolve, vivaldi) because upstream doesn't ship aarch64
@@ -299,6 +304,47 @@ llama.cpp backend on a *fresh* install, so `unsloth-bootstrap` also checks the
 `~/.unsloth/llama.cpp/UNSLOTH_PREBUILT_INFO.json` marker and reinstalls the
 CUDA bundle if a stale CPU one is present.
 
+## vLLM (CUDA LLM serving)
+
+**vLLM** is the high-throughput LLM inference/serving engine, built with CUDA
+and installed as a nix package on the x86_64 NVIDIA hosts. It's gated by the
+`vllmGpuTargets` per-host flag:
+
+| Host | `vllmGpuTargets` | Compute cap | vLLM |
+|---|---|---|---|
+| nixos (laptop) | `[ "8.6" ]` | 8.6 (RTX 3050) | yes |
+| lab (GPU box) | `[ "8.9" ]` | 8.9 (A6000 Ada) | yes |
+| desk | `[ ]` (GPU unknown) | — | no — set it once the vfio GPU's cap is known |
+| m2 | — (aarch64) | — | no (no aarch64 wheel; a source build is impractical) |
+
+Two nixpkgs quirks are handled in `home/default.nix`:
+
+- **Global `config.cudaSupport`.** flashinfer (a vLLM CUDA dep) is marked
+  `meta.broken = !torch.cudaSupport || !config.cudaSupport`, which a
+  per-package override can't fix. `flake.nix` therefore sets
+  `nixpkgs.config.cudaSupport = vllmGpuTargets != []` per host (the home module
+  picks this up via `useGlobalPkgs`), making torch, vLLM and flashinfer CUDA by
+  default — no per-package torch/cudaPackages override needed.
+- **`outlines` → tensorflow.** vLLM's structured-output dep `outlines` lists
+  `tensorflow` in `nativeCheckInputs`, and `tensorflow-bin` ships no py3.14
+  wheel — resolving it throws at eval time even though those tests never run.
+  The package overrides `outlines` with an empty tensorflow check-input stub.
+
+**First build is heavy.** torch + vLLM + flashinfer compile from source for the
+host's arch, so the first `nh os switch` on a vLLM host is a long, RAM-heavy
+build; later switches are incremental. Each host gets its own vLLM build keyed
+to its `gpuTargets` (the 8.6 laptop build ≠ the 8.9 GPU-box build).
+
+**Serve.** The `vllm-serve` launcher binds loopback only:
+
+```console
+vllm-serve /path/to/model [extra vllm flags]
+# → vllm serve --host 127.0.0.1 --port 8000 /path/to/model ...
+```
+
+Reach it over SSH: `ssh -L 8000:127.0.0.1:8000 <host>`, then hit
+`http://127.0.0.1:8000` (OpenAI-compatible API).
+
 ## Noctalia (desktop shell)
 
 Noctalia is pinned to its **`cachix`** branch with `inputs.nixpkgs.follows`
@@ -438,4 +484,5 @@ fresh `flutter create` inside the devShell on the laptop.
 - **Media**: blender (prebuilt CUDA on NVIDIA, stock nixpkgs elsewhere), davinci-resolve (x86_64 only), obs-studio
 - **Diffusion**: ComfyUI via comfy-cli (CUDA launcher on NVIDIA, portable CPU launcher on M2)
 - **Local LLM**: Unsloth Studio (loopback-only, GGUF inference + no-code fine-tuning)
+- **LLM serving**: vLLM (CUDA, loopback `vllm-serve`) on the NVIDIA x86_64 hosts
 - **Tools**: ripgrep, fd, fzf, tmux, yt-dlp, ffmpeg, aria2, timg, and more

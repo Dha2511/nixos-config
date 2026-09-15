@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, username, homeDirectory, isNvidia, hostName, hasTabby, isHeadless ? false, ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, username, homeDirectory, isNvidia, hostName, hasTabby, isHeadless ? false, vllmGpuTargets ? [ ], ... }:
 
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
@@ -47,6 +47,41 @@ let
   comfyuiScript = if isNvidia then scripts.comfyui else scripts.comfyui-portable;
   blenderPackage = if isNvidia then scripts.blender-bin else pkgs.blender;
   isx86_64 = pkgs.stdenv.hostPlatform.isx86_64;
+
+  # vLLM — high-throughput LLM inference/serving engine. x86_64 only (there's
+  # no aarch64 wheel and a from-source build on the M2 is impractical). On
+  # NVIDIA hosts that pass explicit GPU compute-capability targets
+  # (vllmGpuTargets, e.g. [ "8.6" ] for an RTX 3050, [ "8.9" ] for an A6000
+  # Ada) the host sets `nixpkgs.config.cudaSupport = true` (see flake.nix), so
+  # torch, vllm and flashinfer are all CUDA by default, and vllm is compiled
+  # from source for the host's arch — the first `nh os switch` is a long,
+  # heavy build. Hosts without an NVIDIA GPU + explicit targets (the aarch64
+  # M2, and desk until its arch is known) get no vllm at all — hence null,
+  # not a CPU build.
+  #
+  # NOTE: this nixpkgs has no top-level `pkgs.torch` (most top-level python
+  # aliases were dropped); reference everything via python3Packages.
+  #
+  # The CUDA build drags in `outlines` (structured output), which lists
+  # `tensorflow` in nativeCheckInputs. tensorflow-bin ships no py3.14 wheel, so
+  # resolving it throws at eval time even though the CUDA build never runs
+  # outlines' tests. Swap in an empty stub for that check input.
+  vllm =
+    if !isx86_64 then
+      null
+    else if isNvidia && vllmGpuTargets != [ ] then
+      let p3 = pkgs.python3Packages;
+      in
+      p3.vllm.override {
+        # Map our per-host specialArg to the vllm `gpuTargets` formal.
+        gpuTargets = vllmGpuTargets;
+        # Drop the tensorflow test dependency (see note above).
+        outlines = p3.outlines.override {
+          tensorflow = pkgs.runCommand "tensorflow-check-stub" { } "mkdir -p $out";
+        };
+      }
+    else
+      null;
 
   # stirling-pdf-desktop (Tauri + Java) has had recurring upstream build
   # breakage ("Cannot wrap .../bin/stirling-pdf because it does not exist" =
@@ -575,6 +610,13 @@ in {
     # Server workload: web UI at http://127.0.0.1:8888 (SSH-tunnel on lab).
     scripts.unsloth-bootstrap
     scripts.unsloth-studio
+  ] ++ lib.optionals (vllm != null) [
+    # vLLM (CUDA) + its loopback launcher. Server workload: `vllm-serve
+    # <model>` binds 127.0.0.1:8000 — reach the OpenAI-compatible API over
+    # `ssh -L 8000:127.0.0.1:8000 <host>`. Present only on x86_64 NVIDIA hosts
+    # that pass vllmGpuTargets (see `vllm` in the let-block).
+    vllm
+    scripts.vllm-serve
   ] ++ lib.optionals (!isHeadless) [
     # GUI
     pkgs.zed-editor
@@ -731,6 +773,8 @@ in {
     ];
 
     initContent = ''
+      export GH_EDITOR=vim
+
       # Ctrl+Left / Ctrl+Right  — jump one word
       bindkey '^[[1;5D' backward-word
       bindkey '^[[1;5C' forward-word

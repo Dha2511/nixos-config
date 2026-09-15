@@ -69,6 +69,11 @@
         # Noctalia, foot, fonts, desktop entries), keeping the CLI/server
         # payloads (Blender CLI, ComfyUI, nvtop, ...).
         , isHeadless ? false
+        # NVIDIA GPU compute-capability target(s) for the CUDA vllm build
+        # (e.g. [ "8.6" ] for an RTX 3050, [ "8.9" ] for an A6000 Ada). Empty
+        # (the default) means no vllm on that host — see the `vllm` selection
+        # in home/default.nix.
+        , vllmGpuTargets ? [ ]
         , extraModules ? [ ]
         }:
         nixpkgs.lib.nixosSystem {
@@ -76,6 +81,13 @@
           specialArgs = { inherit inputs; };
           modules = extraModules ++ [
             ./hosts/${hostName}/configuration.nix
+            # Enable global CUDA support only on hosts that build the CUDA
+            # vllm (vllmGpuTargets non-empty). This makes torch, vllm and
+            # flashinfer evaluate as CUDA and un-breaks flashinfer (whose
+            # `meta.broken` is `!torch.cudaSupport || !config.cudaSupport`).
+            # Kept off on aarch64 / no-GPU hosts so they never pull CUDA-only
+            # deps. The home module picks this up via useGlobalPkgs.
+            { nixpkgs.config.cudaSupport = vllmGpuTargets != [ ]; }
             home-manager.nixosModules.home-manager
             {
               home-manager.useGlobalPkgs = true;
@@ -84,7 +96,7 @@
               # ~/.config/sway/config) instead of failing activation.
               home-manager.backupFileExtension = ".hmbk";
               home-manager.extraSpecialArgs = {
-                inherit inputs username homeDirectory isNvidia hostName hasTabby isHeadless;
+                inherit inputs username homeDirectory isNvidia hostName hasTabby isHeadless vllmGpuTargets;
                 # Noctalia is GUI-only; headless hosts get null so the noctalia
                 # flake is never even evaluated (lazy attrset value). The home
                 # module only references it inside !isHeadless blocks.
@@ -143,6 +155,8 @@
           hostName = "nixos";
           username = "bob";
           isNvidia = true;
+          # RTX 3050 Mobile (Ampere, sm_86).
+          vllmGpuTargets = [ "8.6" ];
         };
 
         # Work MacBook (Apple Silicon M2) NixOS guest in UTM (aarch64-linux,
@@ -167,6 +181,9 @@
           username = "bob";
           isNvidia = true;
           hasTabby = true;
+          # vllmGpuTargets left empty until the passed-through GPU's compute
+          # capability is known (vfio passthrough — see hosts/desk/config).
+          # Add e.g. vllmGpuTargets = [ "8.9" ]; once known to enable CUDA vllm.
         };
 
         # Headless GPU compute box: 4x NVIDIA RTX 6000 Ada, no display, no
@@ -181,6 +198,8 @@
           username = "bob";
           isNvidia = true;
           isHeadless = true;
+          # 4x RTX 6000 Ada (Ada Lovelace, sm_89).
+          vllmGpuTargets = [ "8.9" ];
         };
       };
     };
