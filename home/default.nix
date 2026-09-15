@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, username, homeDirectory, isNvidia, hostName, hasTabby, isHeadless ? false, vllmGpuTargets ? [ ], ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, username, homeDirectory, isNvidia, hostName, hasTabby, isHeadless ? false, isContainer ? false, vllmGpuTargets ? [ ], ... }:
 
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
@@ -47,6 +47,11 @@ let
   comfyuiScript = if isNvidia then scripts.comfyui else scripts.comfyui-portable;
   blenderPackage = if isNvidia then scripts.blender-bin else pkgs.blender;
   isx86_64 = pkgs.stdenv.hostPlatform.isx86_64;
+
+  # vllm-serve variant selection: the nix-built CUDA vllm on NixOS hosts vs
+  # the uv/PyPI-venv variant in the dev container (where the nix CUDA build
+  # is never baked — see `vllm` below; the container uses vllm-bootstrap).
+  vllmServeScript = if isContainer then scripts.vllm-serve-uv else scripts.vllm-serve;
 
   # vLLM — high-throughput LLM inference/serving engine. x86_64 only (there's
   # no aarch64 wheel and a from-source build on the M2 is impractical). On
@@ -616,7 +621,15 @@ in {
     # `ssh -L 8000:127.0.0.1:8000 <host>`. Present only on x86_64 NVIDIA hosts
     # that pass vllmGpuTargets (see `vllm` in the let-block).
     vllm
-    scripts.vllm-serve
+  ] ++ lib.optionals (vllm != null || isContainer) [
+    # Loopback launcher for whichever vllm this host/container uses (nix
+    # build vs uv venv — see `vllmServeScript` in the let-block).
+    vllmServeScript
+  ] ++ lib.optionals isContainer [
+    # Dev-container-only: vLLM via uv + PyPI wheels (they bundle their own
+    # CUDA runtime; only the host driver is injected). The container never
+    # carries the nix CUDA vllm build — vllmGpuTargets is empty there.
+    scripts.vllm-bootstrap
   ] ++ lib.optionals (!isHeadless) [
     # GUI
     pkgs.zed-editor
@@ -704,6 +717,10 @@ in {
   # Enable fontconfig so home-profile fonts are visible to GUI apps.
   # Headless hosts have no GUI rendering — skip it.
   fonts.fontconfig.enable = !isHeadless;
+
+  # genericLinux tweaks (xdg dirs/user-dirs plumbing) for home-manager on a
+  # non-NixOS distro — the dev container. NixOS hosts keep the default (false).
+  targets.genericLinux.enable = isContainer;
 
   # direnv — auto-loads devShells on `cd` into a flake repo.
   # nix-direnv caches `nix develop` results so entry is instant after the first.

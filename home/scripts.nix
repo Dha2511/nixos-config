@@ -226,6 +226,37 @@ let
     export LD_LIBRARY_PATH="${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     exec vllm serve --host 127.0.0.1 --port 8000 "$@"
   '';
+
+  # vLLM bootstrap for the dev container: uv venv + PyPI wheels. The wheels
+  # carry their own CUDA runtime (torch cu12x, prebuilt kernels, ...); only
+  # libcuda.so.1 comes from the host driver, injected by the NVIDIA container
+  # toolkit (CDI). This avoids baking the multi-hour nix CUDA vllm build into
+  # the image — that one stays NixOS-hosts-only via `vllmGpuTargets`. Pinned
+  # to python312: PyPI has no cp314 wheels for vllm/torch yet (nixpkgs python3
+  # is 3.14, so the venv must NOT use it).
+  vllm-bootstrap = pkgs.writeShellScriptBin "vllm-bootstrap" ''
+    set -e
+    mkdir -p ~/.vllm
+    cd ~/.vllm
+    if [ ! -x venv/bin/python ]; then
+      ${pkgs.uv}/bin/uv venv venv --python ${pkgs.python312}/bin/python3.12
+    fi
+    ${pkgs.uv}/bin/uv pip install --python venv/bin/python vllm
+    echo "Done. Serve with: vllm-serve /path/to/model  (OpenAI API at http://127.0.0.1:8000)"
+  '';
+
+  # Container variant of vllm-serve (same binary name, same UX, same
+  # loopback-only contract as the nix one above): execs the venv installed by
+  # vllm-bootstrap. The driver-tree LD_LIBRARY_PATH entry keeps torch's
+  # runtime dlopen of libcuda.so.1 robust, matching the other launchers.
+  vllm-serve-uv = pkgs.writeShellScriptBin "vllm-serve" ''
+    if [ ! -x "$HOME/.vllm/venv/bin/vllm" ]; then
+      echo "vLLM is not installed yet. Run vllm-bootstrap first." >&2
+      exit 1
+    fi
+    export LD_LIBRARY_PATH="${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    exec "$HOME/.vllm/venv/bin/vllm" serve --host 127.0.0.1 --port 8000 "$@"
+  '';
 in {
-  inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin unsloth-env unsloth-bootstrap unsloth-studio vllm-serve;
+  inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin unsloth-env unsloth-bootstrap unsloth-studio vllm-serve vllm-bootstrap vllm-serve-uv;
 }

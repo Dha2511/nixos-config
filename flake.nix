@@ -1,5 +1,5 @@
 {
-  description = "Portable NixOS config (laptop, 2 VMs + headless GPU box)";
+  description = "Portable NixOS config (laptop, 2 VMs, headless GPU box + podman dev container)";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
@@ -97,6 +97,10 @@
               home-manager.backupFileExtension = ".hmbk";
               home-manager.extraSpecialArgs = {
                 inherit inputs username homeDirectory isNvidia hostName hasTabby isHeadless vllmGpuTargets;
+                # NOTE: hm's NixOS module path ignores function-arg defaults,
+                # so every flag must be passed explicitly here (a `? false`
+                # default is NOT enough — eval fails with "attribute missing").
+                isContainer = false;
                 # Noctalia is GUI-only; headless hosts get null so the noctalia
                 # flake is never even evaluated (lazy attrset value). The home
                 # module only references it inside !isHeadless blocks.
@@ -134,12 +138,61 @@
           inherit system;
           config.allowUnfree = true;
         }).callPackage ./pkgs/gitbutler { };
+
+      # Dev-container image (podman): the headless home tier (Blender CLI,
+      # ComfyUI, Unsloth, vLLM via uv bootstrap, full CLI/dev setup) plus a
+      # flakes-enabled nix, materialized at build time via standalone
+      # home-manager. Run on any host with nix + podman (see container/):
+      #   nix build .#container-image -o result-container
+      #   ./result-container | podman load
+      #   ./container/run.sh && podman exec -it lab-dev zsh
+      #
+      # Profile knobs: isNvidia=true (host GPUs arrive via the NVIDIA
+      # container toolkit / CDI), isHeadless=true (same CLI-only tier as lab),
+      # vllmGpuTargets=[] (the multi-hour nix CUDA vllm build stays
+      # NixOS-hosts-only; the container bootstraps vllm from PyPI instead).
+      containerImage =
+        let
+          system = "x86_64-linux";
+          pkgs = import nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+          };
+          containerHome = inputs.home-manager.lib.homeManagerConfiguration {
+            inherit pkgs;
+            modules = [ ./home ];
+            extraSpecialArgs = {
+              inherit inputs;
+              username = "bob";
+              homeDirectory = "/home/bob";
+              isNvidia = true;
+              hostName = "container";
+              hasTabby = false;
+              isHeadless = true;
+              isContainer = true;
+              vllmGpuTargets = [ ];
+              noctalia-pkg = null; # GUI-only; never referenced on a headless profile
+              gitbutler = gitbutlerPkg system;
+            };
+          };
+        in
+        import ./container/image.nix {
+          inherit pkgs;
+          hm = containerHome.config;
+          nixpkgsSrc = nixpkgs.outPath;
+        };
     in
     {
       # GitButler CLI prebuilt — buildable standalone (nix build .#gitbutler)
       # without triggering a full host rebuild.
       packages.x86_64-linux.gitbutler = gitbutlerPkg "x86_64-linux";
       packages.aarch64-linux.gitbutler = gitbutlerPkg "aarch64-linux";
+
+      # Podman dev-container image (see container/). Output of
+      # streamLayeredImage is an EXECUTABLE that streams the image tarball:
+      #   nix build .#container-image -o result-container
+      #   ./result-container | podman load
+      packages.x86_64-linux.container-image = containerImage;
 
       # Flutter Android devShell — x86_64-only: Google ships Android SDK
       # linux binaries for x86_64 exclusively, so there is no aarch64 (M2)

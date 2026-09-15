@@ -486,3 +486,71 @@ fresh `flutter create` inside the devShell on the laptop.
 - **Local LLM**: Unsloth Studio (loopback-only, GGUF inference + no-code fine-tuning)
 - **LLM serving**: vLLM (CUDA, loopback `vllm-serve`) on the NVIDIA x86_64 hosts
 - **Tools**: ripgrep, fd, fzf, tmux, yt-dlp, ffmpeg, aria2, timg, and more
+
+## Dev container (podman)
+
+A portable version of the headless tier: a **podman image built by nix** that
+carries the full CLI dev environment — Blender CLI, ComfyUI, Unsloth, vLLM
+(via uv), opencode, gitbutler, the zsh/starship/direnv/helix/tmux setup, plus
+a flakes-enabled `nix` for project work. Run it on any host (e.g. Ubuntu with
+an NVIDIA driver) and work inside it entirely over SSH to the host + `podman
+exec`.
+
+Files: `container/` — `image.nix` (the image), `bootstrap-host.sh` (one-time
+host setup), `run.sh` (build/load/run).
+
+### Host bootstrap (Ubuntu, once)
+
+```console
+sudo ./container/bootstrap-host.sh   # podman + nix + NVIDIA container toolkit (CDI)
+nvidia-smi                           # driver must already work
+```
+
+### Build + run
+
+```console
+./container/run.sh                   # nix build -> podman load -> podman run
+podman exec -it lab-dev zsh          # enter
+```
+
+`run.sh` recreates a container named `lab-dev` with:
+
+- `--device nvidia.com/gpu=all` (CDI; `GPU=0 ./container/run.sh` skips it)
+- a bind mount for `/home/bob` (`HOME_DIR=...`, default `./lab-home`) — all
+  state (uv venvs, `~/comfy`, `~/.unsloth`, models) survives recreation
+- a bind mount for projects (`PROJECTS_DIR=...`, default `./projects`, mounted
+  at `~/projects`)
+- loopback-only port maps: 8188 (ComfyUI), 8888 (Unsloth), 8000 (vLLM) — reach
+  them from your machine with the usual `ssh -L 8188:127.0.0.1:8188 <host>`
+  tunnels
+
+### Environment lifecycle
+
+- **Inside**: `nix` works for project flakes (direnv, `nixpkgs#...` — the
+  registry pins the flake's locked nixpkgs, baked into the image). Builds run
+  with `sandbox = false` (rootless containers cannot create build namespaces).
+  Runtime-built store paths live in the container's writable layer: they
+  survive restarts but not recreation — cheap to re-fetch.
+- **Update the environment**: edit the repo, `./container/run.sh` again. The
+  entrypoint re-materializes home-manager files into the home volume when the
+  baked activation differs (marker file `~/.cache/lab-container/home-version`).
+  Bootstrapped state is never touched.
+- **GPU check inside**: `nvidia-smi`; the entrypoint links the injected
+  driver libs to `/run/opengl-driver/lib`, the exact path every launcher in
+  `home/scripts.nix` expects — Blender/ComfyUI/Unsloth/vLLM need no changes.
+- **vLLM in the container**: `vllm-bootstrap` (uv venv on python312, PyPI
+  wheels bundle their own CUDA runtime — only `libcuda.so.1` comes from the
+  host driver), then `vllm-serve /path/to/model` (loopback :8000). The
+  multi-hour nix CUDA vllm build stays NixOS-hosts-only (`vllmGpuTargets`).
+
+### Notes
+
+- The image runs as container **root** with `HOME=/home/bob`. On Ubuntu's
+  default rootless podman this maps to your host user, so bind-mount
+  ownership lines up. (On hosts with exotic subordinate-uid mappings — e.g.
+  some NixOS podman setups map container root to a *different* host uid —
+  volume files will show that uid on the host; everything inside still works.)
+- `podman load` needs a signature policy; `run.sh` creates a permissive
+  user-level one (`~/.config/containers/policy.json`) if missing.
+- The `lab` NixOS host (headless GPU box) remains in the flake but is
+  currently unused — this container target supersedes it for now.
