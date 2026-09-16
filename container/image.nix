@@ -59,7 +59,8 @@ let
   });
 
   # Container entrypoint: GPU shim + home materialization. Runs on every
-  # `podman run`; `podman exec` skips it (image Env carries the essentials).
+  # `podman run`; `podman exec` skips it (image Env carries the essentials;
+   # the GPU LD_LIBRARY_PATH reaches exec'd shells via a .zshenv hook).
   # With explicit args (e.g. `podman run -it lab-dev zsh`) it execs them
   # instead of the keep-alive sleep.
   entrypoint = pkgs.writeShellScriptBin "entrypoint" ''
@@ -104,6 +105,12 @@ let
       ln -sfn ${activation}/home-path "$HOME/.nix-profile"
       printf '%s' "${activation}" > "$marker"
     fi
+
+    # `podman exec` skips the entrypoint export above — mirror the GPU lib
+    # path into .zshenv (read by every zsh) so exec'd shells find the driver
+    # libs too. Idempotent; re-appended if a home rebuild overwrote it.
+    gpu_line='[[ -d /run/opengl-driver/lib ]] && export LD_LIBRARY_PATH="/run/opengl-driver/lib$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"'
+    grep -qxF "$gpu_line" "$HOME/.zshenv" 2>/dev/null || echo "$gpu_line" >> "$HOME/.zshenv"
 
     # Interactive use: `podman run -it lab-dev zsh` execs the args; detached
     # (`podman run -d`) sleeps forever so `podman exec` can attach.
