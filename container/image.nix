@@ -144,6 +144,7 @@ pkgs.dockerTools.streamLayeredImage {
     gnused
     findutils
     gawk
+    gnumake
     diffutils
     less
     gzip
@@ -201,7 +202,7 @@ pkgs.dockerTools.streamLayeredImage {
       "NIXPKGS_ALLOW_UNFREE=1"
       "XDG_RUNTIME_DIR=/tmp/xdg-runtime"
       # glibc.bin/bin carries locale/iconv/ldd (this glibc's out output has no bin).
-      "PATH=${homeDir}/.nix-profile/bin:${homeDir}/.local/bin:${pkgs.nix}/bin:${pkgs.coreutils}/bin:${pkgs.glibc.bin}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:${pkgs.gawk}/bin:${pkgs.diffutils}/bin:${pkgs.less}/bin:${pkgs.gzip}/bin:${pkgs.bzip2}/bin:${pkgs.xz}/bin:${pkgs.bashInteractive}/bin:${pkgs.zsh}/bin"
+      "PATH=${homeDir}/.nix-profile/bin:${homeDir}/.local/bin:${pkgs.nix}/bin:${pkgs.coreutils}/bin:${pkgs.glibc.bin}/bin:${pkgs.gnugrep}/bin:${pkgs.gnused}/bin:${pkgs.findutils}/bin:${pkgs.gawk}/bin:${pkgs.gnumake}/bin:${pkgs.diffutils}/bin:${pkgs.less}/bin:${pkgs.gzip}/bin:${pkgs.bzip2}/bin:${pkgs.xz}/bin:${pkgs.bashInteractive}/bin:${pkgs.zsh}/bin"
     ];
     WorkingDir = homeDir;
     Entrypoint = [ "${entrypoint}/bin/entrypoint" ];
