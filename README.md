@@ -520,9 +520,10 @@ podman exec -it lab-dev zsh          # enter
   state (uv venvs, `~/comfy`, `~/.unsloth`, models) survives recreation
 - a bind mount for projects (`PROJECTS_DIR=...`, default `./projects`, mounted
   at `~/projects`)
-- loopback-only port maps: 8188 (ComfyUI), 8888 (Unsloth), 8000 (vLLM) — reach
-  them from your machine with the usual `ssh -L 8188:127.0.0.1:8188 <host>`
-  tunnels
+- loopback-only port maps: 8188 (ComfyUI), 8888 (Unsloth), 8000–8003 (vLLM,
+  one instance per model via `--port`), plus any
+  `EXTRA_PORTS="8100 8200" ./container/run.sh` extras — reach them from your
+  machine with the usual `ssh -L 8188:127.0.0.1:8188 <host>` tunnels
 
 ### Environment lifecycle
 

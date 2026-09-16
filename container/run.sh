@@ -3,6 +3,7 @@
 #
 #   ./container/run.sh                 # rebuild image, recreate container
 #   GPU=0 ./container/run.sh           # no GPU (CPU-only run)
+#   EXTRA_PORTS="8100 8200" ./container/run.sh   # extra loopback port maps
 #   podman exec -it lab-dev zsh        # enter (over SSH to the host)
 #
 # Servers inside bind their container loopback; the -p mappings publish them
@@ -15,6 +16,7 @@ GPU="${GPU:-1}"
 NAME="${NAME:-lab-dev}"
 HOME_DIR="${HOME_DIR:-$PWD/lab-home}"          # /home/bob (dotfiles + bootstraps + models)
 PROJECTS_DIR="${PROJECTS_DIR:-$PWD/projects}"  # your source checkouts
+EXTRA_PORTS="${EXTRA_PORTS:-}"                 # extra loopback port maps, space-separated
 
 mkdir -p "$HOME_DIR" "$PROJECTS_DIR"
 
@@ -58,17 +60,22 @@ if [ "$GPU" = "1" ]; then
   GPU_ARGS=(--device nvidia.com/gpu=all)
 fi
 
+# Fixed server ports plus any extras; all bound to host loopback only.
+# 8000-8003: one vLLM instance per model (`vllm-serve <model> --port N`).
+PORT_ARGS=()
+for p in 8188 8888 8000 8001 8002 8003 $EXTRA_PORTS; do
+  PORT_ARGS+=(-p "127.0.0.1:$p:$p")
+done
+
 echo "== running $NAME =="
 "${PODMAN[@]}" run -d --name "$NAME" \
   "${GPU_ARGS[@]}" \
   -v "$HOME_DIR:/home/bob" \
   -v "$PROJECTS_DIR:/home/bob/projects" \
-  -p 127.0.0.1:8188:8188 \
-  -p 127.0.0.1:8888:8888 \
-  -p 127.0.0.1:8000:8000 \
+  "${PORT_ARGS[@]}" \
   localhost/lab-dev:latest
 
 echo
 echo "Up. Enter with:  podman exec -it $NAME zsh"
-echo "Servers (host loopback): ComfyUI :8188, Unsloth :8888, vLLM :8000"
+echo "Servers (host loopback): ComfyUI :8188, Unsloth :8888, vLLM :8000-8003${EXTRA_PORTS:+ (extra: $EXTRA_PORTS)}"
 echo "GPU check inside:        nvtop"

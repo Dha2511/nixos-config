@@ -254,7 +254,7 @@ let
       echo "vLLM is not installed yet. Run vllm-bootstrap first." >&2
       exit 1
     fi
-    export LD_LIBRARY_PATH="${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     exec "$HOME/.vllm/venv/bin/vllm" serve --host 127.0.0.1 --port 8000 "$@"
   '';
 in {
