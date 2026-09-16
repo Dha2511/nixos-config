@@ -137,6 +137,8 @@ pkgs.dockerTools.streamLayeredImage {
     xz
     cacert
     glibcLocales
+    # GPU check inside the container; driver libs arrive via the CDI hook.
+    nvidia-smi
     dockerTools.usrBinEnv # /usr/bin/env
     dockerTools.binSh     # /bin/sh
     nixpkgsSrc            # locked nixpkgs source for the offline registry
