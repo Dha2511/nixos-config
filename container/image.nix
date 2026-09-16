@@ -161,6 +161,11 @@ pkgs.dockerTools.streamLayeredImage {
   extraCommands = ''
     mkdir -p etc/nix etc/ssl/certs home/bob tmp root
     chmod 1777 tmp
+    # The PyPI CUDA toolchain wheels (ptxas, nvcc, ...) are manylinux builds
+    # whose PT_INTERP is /lib64/ld-linux-x86-64.so.2; point it at this
+    # glibc's loader or they fail to exec.
+    mkdir -p lib64
+    ln -s ${pkgs.glibc}/lib/ld-linux-x86-64.so.2 lib64/ld-linux-x86-64.so.2
     cat > etc/passwd <<'EOF_PASSWD'
     root:x:0:0:root:/root:/bin/sh
     bob:x:1000:1000::/home/bob:/bin/sh

@@ -220,10 +220,13 @@ let
   # autoAddDriverRunpath and carries its CUDA runtime deps, so it locates
   # libcuda + cublas/cudnn on its own; the driver tree is still added to
   # LD_LIBRARY_PATH so torch's runtime dlopen of libcuda.so.1 is robust,
-  # matching the other NVIDIA launchers. The model is the first arg:
-  # `vllm-serve /path/to/model [extra vllm flags]`.
+  # matching the other NVIDIA launchers. TRITON_LIBCUDA_PATH points triton's
+  # NVIDIA backend at the driver tree so its `/sbin/ldconfig -p` probe (no
+  # /sbin on NixOS) is skipped — same knob as unsloth-env/comfyui. The model
+  # is the first arg: `vllm-serve /path/to/model [extra vllm flags]`.
   vllm-serve = pkgs.writeShellScriptBin "vllm-serve" ''
     export LD_LIBRARY_PATH="${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    ${lib.optionalString isNvidia "export TRITON_LIBCUDA_PATH=\"${nvidiaLibs}\""}
     exec vllm serve --host 127.0.0.1 --port 8000 "$@"
   '';
 
@@ -241,7 +244,10 @@ let
     if [ ! -x venv/bin/python ]; then
       ${pkgs.uv}/bin/uv venv venv --python ${pkgs.python312}/bin/python3.12
     fi
-    ${pkgs.uv}/bin/uv pip install --python venv/bin/python vllm
+    # ninja: flashinfer JIT-compiles its sampling kernels at first serve and
+    # shells out to `ninja`; the manylinux wheel puts it in the venv's bin
+    # (which the launcher puts on PATH).
+    ${pkgs.uv}/bin/uv pip install --python venv/bin/python vllm ninja
     echo "Done. Serve with: vllm-serve /path/to/model  (OpenAI API at http://127.0.0.1:8000)"
   '';
 
@@ -249,13 +255,44 @@ let
   # loopback-only contract as the nix one above): execs the venv installed by
   # vllm-bootstrap. The driver-tree LD_LIBRARY_PATH entry keeps torch's
   # runtime dlopen of libcuda.so.1 robust, matching the other launchers.
+  # TRITON_LIBCUDA_PATH skips triton's nonexistent /sbin/ldconfig probe (see
+  # the nix variant above) — the venv's pip triton otherwise dies during the
+  # first torch.compile with "No such file or directory: '/sbin/ldconfig'".
+  #
+  # First serve also JIT-compiles flashinfer's sampling kernels (nvcc →
+  # ninja → g++), so the launcher exports a full host toolchain: CC/CXX
+  # (stdenv gcc), LIBRARY_PATH (glibc + gcc crt objects for the direct g++
+  # link), PATH (venv/bin for the ninja wheel, binutils for `as`), CUDA_HOME
+  # (the wheel's CUDA toolkit) and the wheel's lib dir on LD_LIBRARY_PATH
+  # (runtime dep of the built .so). Two shims are recreated idempotently:
+  # unversioned lib64/libcudart.so + lib64/stubs/libcuda.so symlinks (the
+  # wheel ships only versioned sonames, so the -lcudart/-lcuda link fails)
+  # and an nvcc wrapper defining CCCL_DISABLE_CTK_COMPATIBILITY_CHECK (the
+  # wheel's bundled CCCL headers reject nvcc 13.x's CUDART_VERSION encoding).
   vllm-serve-uv = pkgs.writeShellScriptBin "vllm-serve" ''
     if [ ! -x "$HOME/.vllm/venv/bin/vllm" ]; then
       echo "vLLM is not installed yet. Run vllm-bootstrap first." >&2
       exit 1
     fi
-    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-    exec "$HOME/.vllm/venv/bin/vllm" serve --host 127.0.0.1 --port 8000 "$@"
+    venv="$HOME/.vllm/venv"
+    cu13="$venv/lib/python3.12/site-packages/nvidia/cu13"
+    export CC="${pkgs.stdenv.cc}/bin/gcc"
+    export CXX="${pkgs.stdenv.cc}/bin/g++"
+    export LIBRARY_PATH="${pkgs.glibc}/lib:${pkgs.stdenv.cc.cc.lib}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}"
+    export PATH="$venv/bin:${pkgs.binutils}/bin:$PATH"
+    export LD_LIBRARY_PATH="$cu13/lib:${pkgs.stdenv.cc.cc.lib}/lib:${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+    ${lib.optionalString isNvidia "export TRITON_LIBCUDA_PATH=\"${nvidiaLibs}\""}
+    if [ -d "$cu13" ]; then
+      export CUDA_HOME="$cu13"
+      mkdir -p "$cu13/lib64/stubs"
+      ln -sfn ../lib/libcudart.so.13 "$cu13/lib64/libcudart.so"
+      ln -sfn "${nvidiaLibs}/libcuda.so" "$cu13/lib64/stubs/libcuda.so"
+      printf '#!/bin/sh\nexec "%s" -DCCCL_DISABLE_CTK_COMPATIBILITY_CHECK "$@"\n' \
+        "$cu13/bin/nvcc" > "$HOME/.local/bin/nvcc"
+      chmod +x "$HOME/.local/bin/nvcc"
+      export FLASHINFER_NVCC="$HOME/.local/bin/nvcc"
+    fi
+    exec "$venv/bin/vllm" serve --host 127.0.0.1 --port 8000 "$@"
   '';
 in {
   inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin unsloth-env unsloth-bootstrap unsloth-studio vllm-serve vllm-bootstrap vllm-serve-uv;

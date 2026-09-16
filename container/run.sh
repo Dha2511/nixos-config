@@ -14,11 +14,11 @@ cd "$(dirname "$0")/.."
 
 GPU="${GPU:-1}"
 NAME="${NAME:-lab-dev}"
-HOME_DIR="${HOME_DIR:-$PWD/lab-home}"          # /home/bob (dotfiles + bootstraps + models)
-PROJECTS_DIR="${PROJECTS_DIR:-$PWD/projects}"  # your source checkouts
+HOME_DIR="${HOME_DIR:-$HOME/lab-home}"         # /home/bob (dotfiles, bootstraps, models);
+                                               # ~/projects inside = $HOME_DIR/projects
 EXTRA_PORTS="${EXTRA_PORTS:-}"                 # extra loopback port maps, space-separated
 
-mkdir -p "$HOME_DIR" "$PROJECTS_DIR"
+mkdir -p "$HOME_DIR/projects"
 
 # nvidia-ctk generates a CDI spec (>= 0.7.0) that only podman >= 5.1 can
 # parse (older podman, e.g. Ubuntu 24.04's 4.9, fails at start with
@@ -71,7 +71,6 @@ echo "== running $NAME =="
 "${PODMAN[@]}" run -d --name "$NAME" \
   "${GPU_ARGS[@]}" \
   -v "$HOME_DIR:/home/bob" \
-  -v "$PROJECTS_DIR:/home/bob/projects" \
   "${PORT_ARGS[@]}" \
   localhost/lab-dev:latest
 

@@ -516,10 +516,10 @@ podman exec -it lab-dev zsh          # enter
 `run.sh` recreates a container named `lab-dev` with:
 
 - `--device nvidia.com/gpu=all` (CDI; `GPU=0 ./container/run.sh` skips it)
-- a bind mount for `/home/bob` (`HOME_DIR=...`, default `./lab-home`) — all
-  state (uv venvs, `~/comfy`, `~/.unsloth`, models) survives recreation
-- a bind mount for projects (`PROJECTS_DIR=...`, default `./projects`, mounted
-  at `~/projects`)
+- a bind mount for `/home/bob` (`HOME_DIR=...`, default `~/lab-home`, outside
+  the repo) — all state (uv venvs, `~/comfy`, `~/.unsloth`, models) survives
+  recreation; project checkouts live in `~/lab-home/projects` on the host,
+  visible as `~/projects` inside
 - loopback-only port maps: 8188 (ComfyUI), 8888 (Unsloth), 8000–8003 (vLLM,
   one instance per model via `--port`), plus any
   `EXTRA_PORTS="8100 8200" ./container/run.sh` extras — reach them from your
