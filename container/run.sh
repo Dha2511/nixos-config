@@ -69,6 +69,7 @@ done
 
 echo "== running $NAME =="
 "${PODMAN[@]}" run -d --name "$NAME" \
+  --ipc=host \
   "${GPU_ARGS[@]}" \
   -v "$HOME_DIR:/home/bob" \
   "${PORT_ARGS[@]}" \
