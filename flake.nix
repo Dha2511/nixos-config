@@ -143,7 +143,7 @@
       # ComfyUI, Unsloth, vLLM via uv bootstrap, full CLI/dev setup) plus a
       # flakes-enabled nix, materialized at build time via standalone
       # home-manager. Run on any host with nix + podman (see container/):
-      #   nix build .#container-image -o result-container
+      #   nix build --extra-experimental-features "nix-command flakes" .#container-image -o result-container
       #   ./result-container | podman load
       #   ./container/run.sh && podman exec -it lab-dev zsh
       #
@@ -190,7 +190,7 @@
 
       # Podman dev-container image (see container/). Output of
       # streamLayeredImage is an EXECUTABLE that streams the image tarball:
-      #   nix build .#container-image -o result-container
+      #   nix build --extra-experimental-features "nix-command flakes" .#container-image -o result-container
       #   ./result-container | podman load
       packages.x86_64-linux.container-image = containerImage;
 

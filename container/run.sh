@@ -19,7 +19,7 @@ PROJECTS_DIR="${PROJECTS_DIR:-$PWD/projects}"  # your source checkouts
 mkdir -p "$HOME_DIR" "$PROJECTS_DIR"
 
 echo "== building image (nix) =="
-nix build .#container-image -o result-container
+nix build --extra-experimental-features "nix-command flakes" .#container-image -o result-container
 
 echo "== loading into podman =="
 # podman refuses to load archives without a signature policy; default to

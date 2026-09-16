@@ -2,7 +2,7 @@
 # vLLM via uv, full CLI/dev setup) plus a flakes-enabled nix, packaged for
 # podman. Built on any host with nix, loaded into podman:
 #
-#   nix build .#container-image -o result-container
+#   nix build --extra-experimental-features "nix-command flakes" .#container-image -o result-container
 #   ./result-container | podman load
 #   container/run.sh                    # sane defaults (GPU, mounts, ports)
 #   podman exec -it lab-dev zsh         # enter over SSH to the host
