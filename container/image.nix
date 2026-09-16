@@ -82,7 +82,9 @@ let
     if [ -n "$libcuda" ]; then
       mkdir -p /run/opengl-driver
       ln -sfn "$libcuda" /run/opengl-driver/lib
-      export LD_LIBRARY_PATH="/run/opengl-driver/lib$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}"
+      # ${"$"} renders as a literal "${" (nix interpolates ${ in strings;
+      # neither $$ nor backslash escape it).
+      export LD_LIBRARY_PATH="/run/opengl-driver/lib${"$"}{LD_LIBRARY_PATH:+:${"$"}LD_LIBRARY_PATH}"
       echo "container: GPU driver libs at $libcuda -> /run/opengl-driver/lib"
     fi
 
@@ -109,7 +111,10 @@ let
     # `podman exec` skips the entrypoint export above — mirror the GPU lib
     # path into .zshenv (read by every zsh) so exec'd shells find the driver
     # libs too. Idempotent; re-appended if a home rebuild overwrote it.
-    gpu_line='[[ -d /run/opengl-driver/lib ]] && export LD_LIBRARY_PATH="/run/opengl-driver/lib$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}"'
+    # Braceless $LD_LIBRARY_PATH: nix interpolates "${" in strings, and zsh
+    # here runs without set -u (unset expands to empty; trailing colon is a
+    # no-op for the loader).
+    gpu_line='[[ -d /run/opengl-driver/lib ]] && export LD_LIBRARY_PATH="/run/opengl-driver/lib:$LD_LIBRARY_PATH"'
     grep -qxF "$gpu_line" "$HOME/.zshenv" 2>/dev/null || echo "$gpu_line" >> "$HOME/.zshenv"
 
     # Interactive use: `podman run -it lab-dev zsh` execs the args; detached
