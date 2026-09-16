@@ -81,6 +81,7 @@ let
     if [ -n "$libcuda" ]; then
       mkdir -p /run/opengl-driver
       ln -sfn "$libcuda" /run/opengl-driver/lib
+      export LD_LIBRARY_PATH="/run/opengl-driver/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
       echo "container: GPU driver libs at $libcuda -> /run/opengl-driver/lib"
     fi
 
@@ -137,8 +138,6 @@ pkgs.dockerTools.streamLayeredImage {
     xz
     cacert
     glibcLocales
-    # GPU check inside the container; driver libs arrive via the CDI hook.
-    pkgs."nvidia-smi"
     dockerTools.usrBinEnv # /usr/bin/env
     dockerTools.binSh     # /bin/sh
     nixpkgsSrc            # locked nixpkgs source for the offline registry

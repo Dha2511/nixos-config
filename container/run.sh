@@ -71,4 +71,4 @@ echo "== running $NAME =="
 echo
 echo "Up. Enter with:  podman exec -it $NAME zsh"
 echo "Servers (host loopback): ComfyUI :8188, Unsloth :8888, vLLM :8000"
-echo "GPU check inside:        nvidia-smi"
+echo "GPU check inside:        nvtop"
