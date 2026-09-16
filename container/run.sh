@@ -28,7 +28,7 @@ PODMAN_VER="$(podman version --format '{{.Client.Version}}' 2>/dev/null || echo 
 if [ "$(printf '%s\n5.1.0\n' "$PODMAN_VER" | sort -V | head -n1)" != "5.1.0" ]; then
   if command -v nix >/dev/null 2>&1; then
     echo "== system podman $PODMAN_VER too old for the host's CDI spec; using nixpkgs podman =="
-    PODMAN=(nix run --extra-experimental-features "nix-command flakes" nixpkgs#podman)
+    PODMAN=(nix run --extra-experimental-features "nix-command flakes" nixpkgs#podman --)
   else
     echo "error: system podman $PODMAN_VER is too old for the host's CDI spec (need >= 5.1) and nix is unavailable" >&2
     exit 1
