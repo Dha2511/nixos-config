@@ -81,7 +81,7 @@ let
     if [ -n "$libcuda" ]; then
       mkdir -p /run/opengl-driver
       ln -sfn "$libcuda" /run/opengl-driver/lib
-      export LD_LIBRARY_PATH="/run/opengl-driver/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+      export LD_LIBRARY_PATH="/run/opengl-driver/lib$${LD_LIBRARY_PATH:+:$${LD_LIBRARY_PATH}}"
       echo "container: GPU driver libs at $libcuda -> /run/opengl-driver/lib"
     fi
 
