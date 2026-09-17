@@ -53,6 +53,7 @@
 
   # System-wide tooling. Hosts layer their own dev-tool baselines on top.
   environment.systemPackages = with pkgs; [
+    gnumake # make — the GNU build tool
     usbutils # lsusb — list USB devices / decode bus+device info
   ];
 
