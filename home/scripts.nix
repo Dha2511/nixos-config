@@ -261,6 +261,13 @@ let
   # loopback-only contract as the nix one above): execs the venv installed by
   # vllm-bootstrap. The driver-tree LD_LIBRARY_PATH entry keeps torch's
   # runtime dlopen of libcuda.so.1 robust, matching the other launchers.
+  #
+  # Binds 0.0.0.0 *inside the container*: 127.0.0.1 is the container's own
+  # loopback in its own netns and is unreachable via podman's `-p` publish, so
+  # the app must bind the wildcard. The loopback-only contract is enforced at
+  # the HOST boundary instead — container/run.sh publishes `127.0.0.1:$p:$p`
+  # only, so the API is reachable solely from the host's loopback (ssh -L);
+  # the in-container 0.0.0.0 bind never reaches the LAN.
   # TRITON_LIBCUDA_PATH skips triton's nonexistent /sbin/ldconfig probe (see
   # the nix variant above) — the venv's pip triton otherwise dies during the
   # first torch.compile with "No such file or directory: '/sbin/ldconfig'".
@@ -299,12 +306,13 @@ let
       export FLASHINFER_NVCC="$HOME/.local/bin/nvcc"
     fi
     # The model must be the first positional arg of `vllm serve` (recent vllm
-    # rejects flags before it); the loopback defaults go after it so explicit
-    # --host/--port in "$@" still win (argparse: last occurrence wins).
+    # rejects flags before it); the bind defaults (0.0.0.0:8000, see above) go
+    # after it so explicit --host/--port in "$@" still win (argparse: last
+    # occurrence wins).
     case "$1" in
       "" | -*) exec "$venv/bin/vllm" serve "$@" ;;
       *)       model="$1"; shift
-               exec "$venv/bin/vllm" serve "$model" --host 127.0.0.1 --port 8000 "$@" ;;
+               exec "$venv/bin/vllm" serve "$model" --host 0.0.0.0 --port 8000 "$@" ;;
     esac
   '';
 in {
