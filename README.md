@@ -339,7 +339,8 @@ to its `gpuTargets` (the 8.6 laptop build ≠ the 8.9 GPU-box build).
 
 ```console
 vllm-serve /path/to/model [extra vllm flags]
-# → vllm serve --host 127.0.0.1 --port 8000 /path/to/model ...
+# → vllm serve /path/to/model --host 127.0.0.1 --port 8000 ...
+#   (explicit --host/--port in [extra vllm flags] override the defaults)
 ```
 
 Reach it over SSH: `ssh -L 8000:127.0.0.1:8000 <host>`, then hit

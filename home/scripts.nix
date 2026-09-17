@@ -227,7 +227,13 @@ let
   vllm-serve = pkgs.writeShellScriptBin "vllm-serve" ''
     export LD_LIBRARY_PATH="${lib.optionalString isNvidia "${nvidiaLibs}:"}''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
     ${lib.optionalString isNvidia "export TRITON_LIBCUDA_PATH=\"${nvidiaLibs}\""}
-    exec vllm serve --host 127.0.0.1 --port 8000 "$@"
+    # The model must be the first positional arg of `vllm serve` (recent vllm
+    # rejects flags before it); the loopback defaults go after it so explicit
+    # --host/--port in "$@" still win (argparse: last occurrence wins).
+    case "$1" in
+      "" | -*) exec vllm serve "$@" ;;
+      *)       model="$1"; shift; exec vllm serve "$model" --host 127.0.0.1 --port 8000 "$@" ;;
+    esac
   '';
 
   # vLLM bootstrap for the dev container: uv venv + PyPI wheels. The wheels
@@ -292,7 +298,14 @@ let
       chmod +x "$HOME/.local/bin/nvcc"
       export FLASHINFER_NVCC="$HOME/.local/bin/nvcc"
     fi
-    exec "$venv/bin/vllm" serve --host 127.0.0.1 --port 8000 "$@"
+    # The model must be the first positional arg of `vllm serve` (recent vllm
+    # rejects flags before it); the loopback defaults go after it so explicit
+    # --host/--port in "$@" still win (argparse: last occurrence wins).
+    case "$1" in
+      "" | -*) exec "$venv/bin/vllm" serve "$@" ;;
+      *)       model="$1"; shift
+               exec "$venv/bin/vllm" serve "$model" --host 127.0.0.1 --port 8000 "$@" ;;
+    esac
   '';
 in {
   inherit comfyui comfyui-portable comfyui-bootstrap stirling-pdf-wrapped blender-bin unsloth-env unsloth-bootstrap unsloth-studio vllm-serve vllm-bootstrap vllm-serve-uv;
