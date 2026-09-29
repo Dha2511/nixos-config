@@ -532,6 +532,9 @@ in {
   xdg.mimeApps = lib.mkIf (!isHeadless) {
     enable = true;
     defaultApplications = {
+      # Zen's built-in PDF.js viewer. zen.desktop ships no application/pdf
+      # MimeType declaration, but xdg-open honors mimeapps.list regardless.
+      "application/pdf" = "zen.desktop";
       "text/html" = "vivaldi-stable.desktop";
       "x-scheme-handler/http" = "vivaldi-stable.desktop";
       "x-scheme-handler/https" = "vivaldi-stable.desktop";
