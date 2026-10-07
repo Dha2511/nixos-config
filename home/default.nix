@@ -714,6 +714,11 @@ in {
     (pkgs.vivaldi.override {
       proprietaryCodecs = true;
       enableWidevine = true;
+      # Native Wayland (ozone) instead of XWayland. The vivaldi wrapper does
+      # NOT honor the global NIXOS_OZONE_WL=1, so this must be explicit.
+      # Portal-based screen share / file dialogs additionally require
+      # graphical-session.target to be active (home/sway.nix).
+      commandLineArgs = "--ozone-platform-hint=auto";
     })
   ];
 
