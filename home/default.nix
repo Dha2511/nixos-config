@@ -1,4 +1,4 @@
-{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, username, homeDirectory, isNvidia, hostName, hasTabby, isHeadless ? false, isContainer ? false, vllmGpuTargets ? [ ], ... }:
+{ config, pkgs, lib, inputs, noctalia-pkg, gitbutler, chatgpt, username, homeDirectory, isNvidia, hostName, hasTabby, isHeadless ? false, isContainer ? false, vllmGpuTargets ? [ ], ... }:
 
 let
   # Noctalia runs this on launch (`started`) and on every light/dark switch
@@ -208,7 +208,7 @@ in {
   # Registers the TabbyAPI provider so tabby/Qwen3.8-27B-exl3 is selectable
   # from every repo; small_model is left to opencode's primary-model fallback.
   xdg.configFile."opencode/opencode.json" = lib.mkIf hasTabby {
-    source = inputs.llm-agent.packages.${pkgs.system}.opencode-config + "/opencode.json";
+    source = inputs.llm-agent.packages.${pkgs.stdenv.hostPlatform.system}.opencode-config + "/opencode.json";
   };
 
   # Noctalia config — FULLY DECLARATIVE. GUI-only: headless hosts have neither
@@ -581,6 +581,9 @@ in {
     gitbutler
     pkgs.podman
     pkgs.opencode
+    # OpenAI Codex CLI — stock nixpkgs package pinned to the lock (~0.146.0);
+    # rises automatically on the next routine full lock bump.
+    pkgs.codex
     pkgs.starship
 
     # Online search
@@ -643,12 +646,15 @@ in {
     # Multimedia / apps
     pkgs.obs-studio
     pkgs.loupe
-    pkgs.zotero
+    # Held on nixos-26.05 since the 2026-10-07 nixos-unstable update failed
+    # building Zotero 10.0.4 (stale Firefox-source patch). Manually revisit
+    # this pin once upstream fixes the unstable package.
+    inputs.nixpkgs-zotero.legacyPackages.${pkgs.stdenv.hostPlatform.system}.zotero
     pkgs.anki
     pkgs.celluloid
     # Zen Browser (Firefox fork) from its own flake input; substitutes the
     # nixpkgs staging package because it tracks upstream releases faster.
-    inputs.zen-browser.packages.${pkgs.system}.default
+    inputs.zen-browser.packages.${pkgs.stdenv.hostPlatform.system}.default
 
     # Foot terminal. notify-send needs Noctalia's notification daemon, so
     # libnotify only makes sense alongside it.
@@ -720,6 +726,12 @@ in {
       # graphical-session.target to be active (home/sway.nix).
       commandLineArgs = "--ozone-platform-hint=auto";
     })
+    # ChatGPT official Linux desktop app (unfree Electron; see pkgs/chatgpt).
+    # Built for x86_64 + aarch64, but installed here only on x86_64 GUI hosts
+    # (nixos, desk). Headless lab never reaches this block; M2 (aarch64)
+    # opt-in: move this entry out of the x86_64-gated list (i.e. into the
+    # plain `!isHeadless` GUI list) once its build is verified there.
+    chatgpt
   ];
 
   # Enable fontconfig so home-profile fonts are visible to GUI apps.

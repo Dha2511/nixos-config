@@ -3,6 +3,11 @@
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
+    # Zotero only: nixpkgs unstable's Zotero 10.0.4 build currently fails
+    # because its Firefox-source patch no longer matches upstream. Keep this
+    # package on the 26.05 stable branch (Zotero 9.0.6 as of 2026-10-07) until
+    # the unstable package builds again; revisit and manually upgrade this pin.
+    nixpkgs-zotero.url = "github:nixos/nixpkgs/nixos-26.05";
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -106,6 +111,7 @@
                 # module only references it inside !isHeadless blocks.
                 noctalia-pkg = if isHeadless then null else wireplumberFix system;
                 gitbutler = gitbutlerPkg system;
+                chatgpt = chatgptPkg system;
               };
               home-manager.users.${username} = import ./home;
             }
@@ -138,6 +144,17 @@
           inherit system;
           config.allowUnfree = true;
         }).callPackage ./pkgs/gitbutler { };
+
+      # Official ChatGPT Linux desktop app (closed-source, unfree) — vendored
+      # derivation (see pkgs/chatgpt). Supports x86_64-linux + aarch64-linux.
+      # Exposed as a flake `packages` output for `nix build .#chatgpt` and wired
+      # into home only on x86_64 GUI hosts (nixos, desk); the M2 opt-in lives in
+      # home/default.nix. Same allowUnfree rationale as gitbutlerPkg.
+      chatgptPkg = system:
+        (import nixpkgs {
+          inherit system;
+          config.allowUnfree = true;
+        }).callPackage ./pkgs/chatgpt { };
 
       # Dev-container image (podman): the headless home tier (Blender CLI,
       # ComfyUI, Unsloth, vLLM via uv bootstrap, full CLI/dev setup) plus a
@@ -173,6 +190,7 @@
               vllmGpuTargets = [ ];
               noctalia-pkg = null; # GUI-only; never referenced on a headless profile
               gitbutler = gitbutlerPkg system;
+              chatgpt = chatgptPkg system;
             };
           };
         in
@@ -187,6 +205,11 @@
       # without triggering a full host rebuild.
       packages.x86_64-linux.gitbutler = gitbutlerPkg "x86_64-linux";
       packages.aarch64-linux.gitbutler = gitbutlerPkg "aarch64-linux";
+
+      # Official ChatGPT Linux desktop app — buildable standalone without a
+      # full host rebuild. Both arches; the M2 stays off until built there.
+      packages.x86_64-linux.chatgpt = chatgptPkg "x86_64-linux";
+      packages.aarch64-linux.chatgpt = chatgptPkg "aarch64-linux";
 
       # Podman dev-container image (see container/). Output of
       # streamLayeredImage is an EXECUTABLE that streams the image tarball:
