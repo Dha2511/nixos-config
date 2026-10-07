@@ -173,6 +173,17 @@ in {
     exec systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP DISPLAY XDG_SESSION_TYPE
     exec dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP
 
+    # Sway is started from tty1 (zprofile `exec sway`), NOT via the systemd
+    # user service — so nothing ever activates graphical-session.target. The
+    # portal units carry Requisite=graphical-session.target, so every portal
+    # start fails with "Dependency failed for Portal service" and anything
+    # portal-based (screen share via xdg-desktop-portal-wlr, FileChooser via
+    # gtk) dies at first request. Start the sway module's session target:
+    # it BindsTo=graphical-session.target and pulls it up via dependency
+    # (direct manual starts are refused — newer systemd adds
+    # RefuseManualStart=yes to graphical-session.target itself).
+    exec systemctl --user start sway-session.target
+
     ### Output configuration
     #
     # Noctalia manages the wallpaper (persisted, via `noctalia msg wallpaper-set`);
