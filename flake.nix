@@ -208,8 +208,11 @@
           hostName = "nixos";
           username = "bob";
           isNvidia = true;
-          # RTX 3050 Mobile (Ampere, sm_86).
-          vllmGpuTargets = [ "8.6" ];
+          # RTX 3050 Mobile (Ampere, sm_86). CUDA vllm disabled here: the
+          # multi-hour nix build of the vllm 0.24.0 / torch 2.12.0 closure
+          # fails on this nixpkgs rev (2026-08-09). Revisit after
+          # `nix flake update nixpkgs` (vllm 0.29.x) or via vllm-bootstrap.
+          vllmGpuTargets = [ ];
         };
 
         # Work MacBook (Apple Silicon M2) NixOS guest in UTM (aarch64-linux,
