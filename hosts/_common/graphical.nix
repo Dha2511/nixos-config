@@ -59,6 +59,12 @@
   # freedesktop color-scheme here so Chromium-based apps follow light/dark mode.
   programs.dconf.enable = true;
 
+  # Android file transfer over USB (MTP). gvfs provides the mtp:// backend so
+  # plugging a phone in (with "File transfer / MTP" selected on the phone)
+  # mounts it automatically; nautilus browses it under "Bob's Phone".
+  services.gvfs.enable = true;
+  environment.systemPackages = [ pkgs.nautilus ];
+
   # XDG desktop portal. gtk = FileChooser/AppChooser; wlr = the wlroots backend
   # that lets the portal detect the Sway session at all + ScreenCast/Screenshot.
   # Without wlr the gtk FileChooser never fires on Sway (file pickers do nothing).
