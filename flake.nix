@@ -12,21 +12,23 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # Noctalia pinned to its `cachix` branch with `inputs.nixpkgs.follows`
-    # removed. Not following our nixpkgs lets noctalia evaluate against the
-    # nixpkgs it was built against, so cache signatures *would* match and
-    # binaries *could* download from noctalia.cachix.org (URL + key wired in
-    # hosts/_common/default.nix). That's the intent — see the NOTE below for
-    # why it currently still builds from source.
-    #
-    # NOTE: two problems currently force a from-source build anyway:
-    #   1. noctalia.cachix.org serves no narinfo for any of the branch's revs
-    #      (the CI workflow claims it pushed them, but they 404).
-    #   2. noctalia's pinned nixpkgs (f13ff45) ships a 0-byte
-    #      wireplumber-0.5.pc, so the meson check "Dependency wireplumber-0.5
-    #      not found" fails at configure time. `wireplumberFix` below swaps in
-    #      our nixpkgs' wireplumber (which has a valid .pc), fixing the build.
-    noctalia.url = "github:noctalia-dev/noctalia/cachix";
+    # Noctalia MUST follow our nixpkgs. Noctalia links libglvnd from its own
+    # closure and, at runtime, dlopens the EGL vendor JSON pinned by
+    # `__EGL_VENDOR_LIBRARY_FILENAMES` (hosts/nixos/configuration.nix) — i.e.
+    # the SYSTEM mesa. If noctalia is built against a different (older) nixpkgs,
+    # its process runs a glibc too old to satisfy the system mesa's symbol
+    # versions (e.g. libgallium-26.2.4 needs GLIBC_2.43), the vendor dlopen
+    # fails, and noctalia dies with "fatal: eglGetDisplay failed". Following
+    # our nixpkgs keeps one glibc world. It also fixes the old 0-byte
+    # wireplumber-0.5.pc build failure (see git history for `wireplumberFix`),
+    # so no override is needed anymore. From-source builds remain the norm:
+    # noctalia.cachix.org serves no narinfo for the branch's revs (the CI
+    # workflow claims it pushed them, but they 404) — URL + key are wired in
+    # hosts/_common/default.nix and will kick in if that's ever fixed.
+    noctalia = {
+      url = "github:noctalia-dev/noctalia/cachix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     # Zen Browser (Firefox fork) — packaged via a community flake that tracks
     # upstream releases closely. Builds for x86_64-linux and aarch64-linux.
     zen-browser = {
@@ -52,14 +54,6 @@
       # NOTE: isNvidia is a real per-host flag — do NOT derive it from
       # stdenv.hostPlatform.isx86_64. x86_64 ≠ NVIDIA (Intel/AMD-only x86
       # boxes and the aarch64 M2 VM all have isNvidia = false).
-      # Workaround for noctalia's pinned nixpkgs shipping a 0-byte
-      # wireplumber-0.5.pc (see input comment above). Overriding the package's
-      # `wireplumber` callPackage arg with our nixpkgs' copy yields a valid
-      # wireplumber-0.5.pc (our nixpkgs lock, 279b4a8, has a 449-byte one).
-      wireplumberFix = system:
-        noctalia.packages.${system}.default.override {
-          wireplumber = nixpkgs.legacyPackages.${system}.wireplumber;
-        };
       mkNixos =
         { system
         , hostName
@@ -109,7 +103,7 @@
                 # Noctalia is GUI-only; headless hosts get null so the noctalia
                 # flake is never even evaluated (lazy attrset value). The home
                 # module only references it inside !isHeadless blocks.
-                noctalia-pkg = if isHeadless then null else wireplumberFix system;
+                noctalia-pkg = if isHeadless then null else noctalia.packages.${system}.default;
                 gitbutler = gitbutlerPkg system;
                 chatgpt = chatgptPkg system;
               };

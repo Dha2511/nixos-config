@@ -348,27 +348,28 @@ Reach it over SSH: `ssh -L 8000:127.0.0.1:8000 <host>`, then hit
 
 ## Noctalia (desktop shell)
 
-Noctalia is pinned to its **`cachix`** branch with `inputs.nixpkgs.follows`
-**removed**. Not following our nixpkgs lets noctalia evaluate against the
-nixpkgs it was built against, so cache signatures *would* match and binaries
-*could* download from `noctalia.cachix.org` instead of compiling from source.
-That's the intent; the cache URL + public key are wired in
-`hosts/_common/default.nix`:
+Noctalia is pinned to its **`cachix`** branch and **follows our nixpkgs**
+(`inputs.nixpkgs.follows = "nixpkgs"`). It must share our nixpkgs: at runtime
+it dlopens the *system* Mesa EGL vendor pinned by
+`__EGL_VENDOR_LIBRARY_FILENAMES` (`hosts/nixos/configuration.nix`), and a
+noctalia built against a different nixpkgs runs a glibc too old to load that
+vendor (GLIBC symbol-version mismatch → `fatal: eglGetDisplay failed`). A
+matching nixpkgs also means cache signatures *would* match and binaries *could*
+download from `noctalia.cachix.org` instead of compiling from source; the
+cache URL + public key are wired in `hosts/_common/default.nix`:
 
 ```
 extra-substituters        = https://noctalia.cachix.org
 extra-trusted-public-keys = noctalia.cachix.org-1:pCOR47nnMEo5thcxNDtzWpOxNFQsBRglJzxWPp3dkU4=
 ```
 
-**Status (2026-08): the cache is currently empty.** No narinfo is served for
+**Status (2026-10): the cache is currently empty.** No narinfo is served for
 any of the branch's revs — the upstream CI workflow claims it pushes them, but
-they all 404. On top of that, noctalia's pinned nixpkgs ships a **0-byte**
-`wireplumber-0.5.pc`, which breaks the meson configure step
-(`Dependency "wireplumber-0.5" not found, tried pkgconfig`). Until upstream
-fixes both, noctalia always compiles from source; `flake.nix`'s `wireplumberFix`
-overrides the package's `wireplumber` callPackage arg with our nixpkgs' copy
-(which has a valid `.pc`) so the build succeeds. A from-source build is
-therefore **expected**, not a sign of a misconfigured key.
+they all 404. noctalia therefore compiles from source (this is **expected**,
+not a sign of a misconfigured key). Unlike the older setup, no
+`wireplumber` override is needed anymore: following our nixpkgs means the
+meson `wireplumber-0.5` check sees a valid `.pc` (the old failure came from
+noctalia's own pinned nixpkgs shipping a 0-byte one).
 
 If noctalia ever *silently* fails to substitute again, double-check that key
 character-by-character against

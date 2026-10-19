@@ -69,11 +69,9 @@
   # (https://app.cachix.org/api/v1/cache/noctalia) — a single wrong character
   # silently invalidates every noctalia path signature.
   #
-  # NOTE: the cache currently serves no binaries (every pushed path 404s), and
-  # noctalia's pinned nixpkgs ships a 0-byte wireplumber-0.5.pc. noctalia
-  # therefore compiles from source on every machine; flake.nix's
-  # `wireplumberFix` swaps in our nixpkgs' wireplumber so that build succeeds.
-  # A from-source build is expected, not a sign of a key typo.
+  # NOTE: the cache currently serves no binaries (every pushed path 404s), so
+  # noctalia compiles from source on every machine. A from-source build is
+  # expected, not a sign of a key typo.
   nix.settings = {
     experimental-features = [ "nix-command" "flakes" ];
     auto-optimise-store = true; # hardlink-dedup on every build
