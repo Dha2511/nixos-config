@@ -1,6 +1,6 @@
 # Official ChatGPT Linux desktop app (closed-source Electron, preview build).
 # Vendor of NixOS/nixpkgs PR #551713 ("chatgpt: support linux"), adapted to
-# this repo's single-file package style and bumped to 26.1002.51308.
+# this repo's single-file package style and bumped to 26.1023.51421.
 #
 # Version/source tracking: OpenAI publishes immutable versioned .deb files
 # (never the mutable `latest/` path) per architecture:
@@ -76,18 +76,18 @@
 }:
 
 let
-  version = "26.1002.51308";
+  version = "26.1023.51421";
 
   inherit (stdenv.hostPlatform.node) arch;
 
   sources = {
     x86_64-linux = {
       url = "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_${version}_amd64.deb";
-      sha256 = "sha256-zlmmG5Te9JzJIdaU75Uh7BdOuLZf2wwoXjuo5FIxoh8=";
+      sha256 = "sha256-RITcK1T8CXi+sjuNjXF0lOTgtPvqsKh2c5EF5QtE3lo=";
     };
     aarch64-linux = {
       url = "https://persistent.oaistatic.com/codex-app-prod/linux/deb/pool/main/c/chatgpt/chatgpt_${version}_arm64.deb";
-      sha256 = "sha256-+S77ypCqNC2L+T+bpY7HUuz4DJ4pHCC6Rd7k2i39xSk=";
+      sha256 = "sha256-50eNhPKTjdNz+mHFKw8gCwfWEOSJRwUr2K10dpt/0/s=";
     };
   };
 
