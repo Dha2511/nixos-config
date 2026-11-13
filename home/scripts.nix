@@ -84,7 +84,7 @@ let
   # pkgs.blender from nixpkgs instead, which has an aarch64 build.
   blender-bin =
     let
-      version = "5.2.0";
+      version = "5.3.0";
       runtimeDeps = with pkgs; [
         wayland libdecor libxkbcommon libGLU libglvnd numactl SDL2 libdrm
         ocl-icd stdenv.cc.cc.lib openal alsa-lib pulseaudio vulkan-loader zlib
@@ -95,8 +95,8 @@ let
       pname = "blender-bin";
       inherit version;
       src = pkgs.fetchurl {
-        url = "https://download.blender.org/release/Blender5.2/blender-${version}-linux-x64.tar.xz";
-        sha256 = "96f6c181a30f4950607839dc84d42a354b250d8a0231b098b59b7bc69c351c48";
+        url = "https://download.blender.org/release/Blender5.3/blender-${version}-linux-x64.tar.xz";
+        hash = "sha256-2suCZBl6P3/aYAEoWlpQb8l+6UOIEmHCw71jyILyLgU=";
       };
       nativeBuildInputs = [ pkgs.makeWrapper pkgs.patchelf ];
       dontUnpack = true;
@@ -110,13 +110,29 @@ let
         mv blender/blender.svg     $out/share/icons/hicolor/scalable/apps/ 2>/dev/null || true
         patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/blender
         patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" blender/*/python/bin/python3* 2>/dev/null || true
+        # Blender >= 5.3 bundles its own (upstream, unpatched) libvulkan.so.1
+        # in lib/. lib/ is first on LD_LIBRARY_PATH below, so it shadows
+        # nixpkgs' vulkan-loader — which is patched to search
+        # /run/opengl-driver/share/vulkan/icd.d for ICDs. The bundled loader
+        # finds no ICD on NixOS, Vulkan init fails ("Unable to initialize a
+        # Vulkan 1.1 instance") and Blender falls back to OpenGL. Drop it so
+        # the patched nixpkgs loader (vulkan-loader in runtimeDeps) is used.
+        rm -f blender/lib/libvulkan.so*
         # Blender's lib/ MUST come first in LD_LIBRARY_PATH: libembree4.so.4
         # (NEEDED on libtbb.so.12) is resolved via the loader search path, not
         # via libembree4's own RUNPATH (DT_RUNPATH isn't transitive).
         # nvidiaLibs (/run/opengl-driver/lib) has no libtbb anyway, but putting
         # $out/libexec/blender/lib first guarantees the bundled, matching libtbb
         # wins for any future lib on that path.
+        # NVIDIA NGX (DLSS Ray Reconstruction) verifies the calling binary's
+        # signature against NVIDIA's app whitelist. patchelf-ing the
+        # interpreter above invalidates it, and the Cycles device probe
+        # (NVSDK_NGX_CUDA_GetFeatureRequirements) reports DLSS unsupported
+        # ("Requires ... driver version 620 or newer"). The driver's
+        # documented escape hatch (html/ngx.html in the driver .run) disables
+        # that check; NGX feature libs themselves stay NVIDIA-signed.
         makeWrapper $out/libexec/blender/blender $out/bin/blender \
+          --set __NV_SIGNED_LOAD_CHECK none \
           --prefix LD_LIBRARY_PATH : $out/libexec/blender/lib:${nvidiaLibs}:${pkgs.lib.makeLibraryPath runtimeDeps}
         runHook postInstall
       '';

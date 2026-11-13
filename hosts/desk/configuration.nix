@@ -74,7 +74,15 @@
     modesetting.enable = true; # required for Wayland
     powerManagement.enable = true; # handles suspend/resume of the VM
     open = false; # proprietary kernel module
-    package = config.boot.kernelPackages.nvidiaPackages.stable;
+    # Temporary pin for Blender 5.3 DLSS; return to stable once nixpkgs
+    # packages driver 620 or newer.
+    package = config.boot.kernelPackages.nvidiaPackages.mkDriver {
+      version = "620.70.06";
+      sha256_64bit = "29118e3abd08c07559bcca3d9c76238d039490af0362a2e5bcfcbe7204afd4b1";
+      openSha256 = "1k6l3d4fyypha7i3jych3cns162hd2kxr43dl04pb5wlg372ypvm";
+      settingsSha256 = "17x1plnn9p5w4cidibr1zga77a4md301qr8lwhgy1xa9f6cm2l08";
+      persistencedSha256 = "144jq28bw3fjsl5sipwgy4gfyxhjrly2h9fz29kivggb1a2b748n";
+    };
   };
 
   # Sway on the NVIDIA proprietary driver. No WLR_DRM_DEVICES pinning — if the
