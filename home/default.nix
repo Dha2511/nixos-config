@@ -693,6 +693,7 @@ in {
     pkgs.alegreya-sans
     pkgs.fraunces
     pkgs.recursive
+    pkgs.stix-two
 
     # Noctalia (shell + panel + notification daemon)
     noctalia-pkg

@@ -43,6 +43,7 @@
     alegreya-sans
     fraunces
     recursive
+    stix-two
   ];
 
   # Audio (PipeWire). Noctalia's volume hooks expect WirePlumber running.
