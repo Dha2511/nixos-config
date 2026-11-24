@@ -581,9 +581,49 @@ in {
     gitbutler
     pkgs.podman
     pkgs.opencode
-    # OpenAI Codex CLI — stock nixpkgs package pinned to the lock (~0.146.0);
-    # rises automatically on the next routine full lock bump.
-    pkgs.codex
+    # Official Codex release, pinned separately so it can track model support
+    # without updating the system-wide nixpkgs lock.
+    (pkgs.callPackage (
+      { lib, stdenvNoCC, fetchurl }:
+      let
+        version = "0.170.0";
+        sources = {
+          x86_64-linux = {
+            target = "x86_64-unknown-linux-musl";
+            hash = "sha256-p3/4e+e6gJ1xVygnCnj1zjUn3AdSlBbR74kpuQuEdes=";
+          };
+          aarch64-linux = {
+            target = "aarch64-unknown-linux-musl";
+            hash = "sha256-P34a44xP4nMi4IK4VejuyTbQj6U41itxwH4qU/NOiEc=";
+          };
+        };
+        source = sources.${stdenvNoCC.hostPlatform.system}
+          or (throw "Codex is not supported on ${stdenvNoCC.hostPlatform.system}");
+      in
+      stdenvNoCC.mkDerivation {
+        pname = "codex";
+        inherit version;
+        src = fetchurl {
+          url = "https://github.com/openai/codex/releases/download/rust-v${version}/codex-package-${source.target}.tar.gz";
+          inherit (source) hash;
+        };
+        sourceRoot = ".";
+        installPhase = ''
+          runHook preInstall
+          mkdir -p "$out"
+          cp -R bin codex-path codex-resources codex-package.json "$out/"
+          runHook postInstall
+        '';
+        dontStrip = true;
+        meta = {
+          description = "OpenAI Codex coding agent";
+          homepage = "https://github.com/openai/codex";
+          license = lib.licenses.asl20;
+          platforms = [ "x86_64-linux" "aarch64-linux" ];
+          mainProgram = "codex";
+        };
+      }
+    ) { })
     pkgs.starship
 
     # Online search
