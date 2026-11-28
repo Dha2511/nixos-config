@@ -581,6 +581,7 @@ in {
     gitbutler
     pkgs.podman
     pkgs.opencode
+    pkgs.claude-code
     # Official Codex release, pinned separately so it can track model support
     # without updating the system-wide nixpkgs lock.
     (pkgs.callPackage (
